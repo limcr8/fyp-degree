@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { VerificationResult, VerificationStatus } from '../types';
-import { verifyNewsContent } from '../services/geminiService';
+import { verifyNewsContent } from '../services/apiService';
 
 interface VerificationViewProps {
   isDarkMode: boolean;
@@ -50,30 +50,8 @@ const VerificationView: React.FC<VerificationViewProps> = ({ isDarkMode }) => {
     setIsVerifying(true);
     try {
       const apiResult = await verifyNewsContent(inputText);
-      
-      const mockResult: VerificationResult = {
-        id: Math.random().toString(36).substr(2, 9),
-        text: inputText,
-        status: (apiResult.status as VerificationStatus) || VerificationStatus.UNCERTAIN,
-        confidence: apiResult.confidence || 0,
-        explanation: apiResult.explanation || "No explanation available.",
-        shapData: apiResult.shapData || [],
-        sources: [
-          { name: 'Reuters', confirmed: apiResult.status === 'REAL' },
-          { name: 'Bloomberg', confirmed: false },
-          { name: 'Associated Press', confirmed: apiResult.status === 'REAL' },
-          { name: 'FactCheck.org', confirmed: false }
-        ],
-        blockchain: {
-          transactionHash: '0x' + Math.random().toString(16).substr(2, 32),
-          blockNumber: Math.floor(Math.random() * 20000000),
-          timestamp: new Date().toISOString().replace('T', ' ').substr(0, 19) + ' UTC',
-          ipfsHash: 'Qm' + Math.random().toString(36).substr(2, 44),
-          network: 'Verification Node Alpha'
-        }
-      };
-      
-      setResult(mockResult);
+
+      setResult(apiResult);
     } catch (err) {
       alert("Verification failed. Check console for details.");
     } finally {
@@ -134,7 +112,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ isDarkMode }) => {
         <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
            <div className="flex items-center gap-2">
               <span className="text-sm font-medium">Linguistic Engine:</span>
-              <span className="px-2 py-1 bg-emerald-500/10 text-emerald-500 text-[10px] font-bold rounded uppercase">Gemini 3.0 Pro</span>
+              <span className="px-2 py-1 bg-emerald-500/10 text-emerald-500 text-[10px] font-bold rounded uppercase">FastAPI Backend</span>
            </div>
            <div className="flex gap-4 w-full sm:w-auto">
              <button 

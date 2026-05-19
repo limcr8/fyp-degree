@@ -13,8 +13,7 @@ The staged backend currently includes:
 * Stage 2 topic verification with spaCy NER and Google CSE support
 * Stage 3 integrity proof with IPFS pinning and EVM testnet anchoring support
 * Local deterministic placeholder logic for later RoBERTa and SHAP integration
-
-The React frontend currently still uses the existing Gemini client. A later stage will switch it to the FastAPI `/analyze` endpoint.
+* React frontend integration with the FastAPI `/analyze` endpoint
 
 ## Prerequisites
 
@@ -108,6 +107,18 @@ Install frontend dependencies:
 
 ```powershell
 npm install
+```
+
+Create frontend environment settings:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+The default frontend API target is:
+
+```text
+VITE_API_BASE_URL=http://localhost:8000
 ```
 
 Start the React/Vite frontend:
