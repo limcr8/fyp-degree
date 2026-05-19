@@ -11,7 +11,8 @@ The staged backend currently includes:
 * Pydantic request/response schemas
 * Frontend-compatible response shape
 * Stage 2 topic verification with spaCy NER and Google CSE support
-* Local deterministic placeholder logic for later RoBERTa, SHAP, IPFS, and blockchain integration
+* Stage 3 integrity proof with IPFS pinning and EVM testnet anchoring support
+* Local deterministic placeholder logic for later RoBERTa and SHAP integration
 
 The React frontend currently still uses the existing Gemini client. A later stage will switch it to the FastAPI `/analyze` endpoint.
 
@@ -59,6 +60,19 @@ For real Google topic verification, fill these values in `backend/.env`:
 GOOGLE_API_KEY=
 GOOGLE_CSE_ID=
 ```
+
+For real integrity proof creation, also fill these values in `backend/.env`:
+
+```text
+IPFS_API_URL=
+IPFS_API_KEY=
+WEB3_PROVIDER_URL=
+WEB3_PRIVATE_KEY=
+WEB3_CHAIN_ID=
+PROOF_CONTRACT_ADDRESS=
+```
+
+`PROOF_CONTRACT_ADDRESS` is optional. If it is empty, the backend anchors proof data in a zero-value transaction sent to the signer address.
 
 Start the FastAPI backend:
 

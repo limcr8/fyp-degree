@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from app.schemas.analysis import AnalyzeRequest, SourceMatch
+from app.schemas.analysis import AnalyzeRequest, BlockchainProof, SourceMatch
 from models.analysis_service import analyze_text
 
 
@@ -18,7 +18,7 @@ def test_analyze_text_returns_stable_contract() -> None:
     assert 0 <= result.confidence <= 1
     assert result.shap_data
     assert result.sources
-    assert result.blockchain.network == "Stage 1 Local Proof"
+    assert result.blockchain.network == "Local Integrity Proof"
 
 
 def test_analyze_text_uses_topic_verification_sources() -> None:
@@ -43,3 +43,22 @@ def test_analyze_text_uses_topic_verification_sources() -> None:
     assert result.sources[0].name == "Reuters"
     assert result.sources[0].confirmed is True
     assert result.sources[0].url == "https://www.reuters.com/markets/bitcoin"
+
+
+def test_analyze_text_uses_integrity_proof_service() -> None:
+    """
+    Verifies that the analysis service delegates proof creation to Stage 3.
+    """
+    request = AnalyzeRequest(text="Bitcoin rises after Reuters report.")
+    proof = BlockchainProof(
+        transactionHash="0xabc",
+        blockNumber=10,
+        timestamp="2026-05-19 00:00:00 UTC",
+        ipfsHash="QmTestCid",
+        network="EVM Testnet",
+    )
+
+    with patch("models.analysis_service.create_integrity_proof", return_value=proof):
+        result = analyze_text(request)
+
+    assert result.blockchain == proof

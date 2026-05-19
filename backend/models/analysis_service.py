@@ -1,14 +1,13 @@
-from datetime import datetime, timezone
 from hashlib import sha256
 from uuid import uuid4
 
 from app.schemas.analysis import (
     AnalyzeRequest,
     AnalyzeResponse,
-    BlockchainProof,
     ShapExplanation,
     VerificationStatus,
 )
+from models.integrity_proof import create_integrity_proof
 from models.verification import verify_topics
 
 
@@ -25,16 +24,32 @@ def analyze_text(request: AnalyzeRequest) -> AnalyzeResponse:
     status = _estimate_status(request.text)
     confidence = _estimate_confidence(request.text, status)
     report_id = str(uuid4())
+    explanation = _build_explanation(status)
+    shap_data = _build_initial_attributions(request.text)
+    sources = verify_topics(request.text)
+    report_payload = {
+        "id": report_id,
+        "text": request.text,
+        "status": status.value,
+        "confidence": confidence,
+        "explanation": explanation,
+        "shapData": [
+            item.model_dump() for item in shap_data
+        ],
+        "sources": [
+            item.model_dump() for item in sources
+        ],
+    }
 
     return AnalyzeResponse(
         id=report_id,
         text=request.text,
         status=status,
         confidence=confidence,
-        explanation=_build_explanation(status),
-        shapData=_build_initial_attributions(request.text),
-        sources=verify_topics(request.text),
-        blockchain=_build_local_proof(report_id, request.text),
+        explanation=explanation,
+        shapData=shap_data,
+        sources=sources,
+        blockchain=create_integrity_proof(report_id, report_payload),
     )
 
 
@@ -142,26 +157,3 @@ def _token_weight(word: str) -> float:
     digest = sha256(word.lower().encode("utf-8")).hexdigest()
     raw_value = int(digest[:4], 16) / 65535
     return round((raw_value - 0.5) * 0.8, 3)
-
-
-def _build_local_proof(report_id: str, text: str) -> BlockchainProof:
-    """
-    Builds deterministic local integrity metadata for Stage 1.
-
-    Args:
-        report_id (str): Generated report identifier.
-        text (str): The analyzed text.
-
-    Returns:
-        BlockchainProof: Local proof metadata matching the production shape.
-    """
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    digest = sha256(f"{report_id}:{text}".encode("utf-8")).hexdigest()
-
-    return BlockchainProof(
-        transactionHash=f"0x{digest[:64]}",
-        blockNumber=0,
-        timestamp=timestamp,
-        ipfsHash=f"local-{digest[:46]}",
-        network="Stage 1 Local Proof",
-    )
