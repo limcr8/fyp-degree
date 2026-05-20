@@ -7,6 +7,7 @@ from app.schemas.analysis import (
     ShapExplanation,
     VerificationStatus,
 )
+from models.explainer import generate_shap_explanations
 from models.integrity_proof import create_integrity_proof
 from models.linguistic import LinguisticPrediction, predict_linguistic_risk
 from models.verification import verify_topics
@@ -27,7 +28,7 @@ def analyze_text(request: AnalyzeRequest) -> AnalyzeResponse:
     confidence = prediction.confidence
     report_id = str(uuid4())
     explanation = prediction.explanation
-    shap_data = _build_initial_attributions(request.text)
+    shap_data = _generate_shap_with_fallback(request.text)
     sources = verify_topics(request.text)
     report_payload = {
         "id": report_id,
@@ -75,6 +76,22 @@ def _predict_with_fallback(text: str) -> LinguisticPrediction:
             confidence=confidence,
             explanation=_build_fallback_explanation(status),
         )
+
+
+def _generate_shap_with_fallback(text: str) -> list[ShapExplanation]:
+    """
+    Uses SHAP when configured, otherwise falls back to deterministic tokens.
+
+    Args:
+        text (str): The analyzed text.
+
+    Returns:
+        list[ShapExplanation]: Frontend-compatible attribution data.
+    """
+    try:
+        return generate_shap_explanations(text)
+    except RuntimeError:
+        return _build_initial_attributions(text)
 
 
 def _estimate_status(text: str) -> VerificationStatus:

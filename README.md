@@ -11,10 +11,11 @@ The staged backend currently includes:
 * Pydantic request/response schemas
 * Frontend-compatible response shape
 * Stage 4 RoBERTa inference service using Hugging Face `transformers`
+* Stage 5 SHAP explanation service for RoBERTa token attribution
 * Stage 2 topic verification with spaCy NER and Google CSE support
 * Stage 3 integrity proof with IPFS pinning and EVM testnet anchoring support
 * Local deterministic fallback logic when RoBERTa is not configured
-* Placeholder SHAP-style attribution until the SHAP stage is implemented
+* Local deterministic fallback attribution when SHAP is not configured
 * React frontend integration with the FastAPI `/analyze` endpoint
 
 ## Prerequisites
@@ -62,6 +63,8 @@ ROBERTA_MODEL_NAME_OR_PATH=
 ```
 
 This can be either a local fine-tuned checkpoint path or a Hugging Face model ID. If it is empty, the backend keeps running with fallback linguistic logic.
+
+The SHAP service uses the same `ROBERTA_MODEL_NAME_OR_PATH` value. If this value is empty or SHAP/model loading fails, the backend keeps running with fallback token attribution.
 
 For real Google topic verification, fill these values in `backend/.env`:
 

@@ -1,6 +1,12 @@
 from unittest.mock import patch
 
-from app.schemas.analysis import AnalyzeRequest, BlockchainProof, SourceMatch, VerificationStatus
+from app.schemas.analysis import (
+    AnalyzeRequest,
+    BlockchainProof,
+    ShapExplanation,
+    SourceMatch,
+    VerificationStatus,
+)
 from models.linguistic import LinguisticPrediction
 from models.analysis_service import analyze_text
 
@@ -82,3 +88,16 @@ def test_analyze_text_uses_linguistic_prediction_service() -> None:
     assert result.status == VerificationStatus.REAL
     assert result.confidence == 0.91
     assert result.explanation == prediction.explanation
+
+
+def test_analyze_text_uses_shap_explanation_service() -> None:
+    """
+    Verifies that the analysis service delegates attribution to Stage 5.
+    """
+    request = AnalyzeRequest(text="Bitcoin rises after Reuters report.")
+    shap_data = [ShapExplanation(word="Bitcoin", weight=0.42)]
+
+    with patch("models.analysis_service.generate_shap_explanations", return_value=shap_data):
+        result = analyze_text(request)
+
+    assert result.shap_data == shap_data
