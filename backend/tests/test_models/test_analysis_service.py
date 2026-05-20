@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
-from app.schemas.analysis import AnalyzeRequest, BlockchainProof, SourceMatch
+from app.schemas.analysis import AnalyzeRequest, BlockchainProof, SourceMatch, VerificationStatus
+from models.linguistic import LinguisticPrediction
 from models.analysis_service import analyze_text
 
 
@@ -62,3 +63,22 @@ def test_analyze_text_uses_integrity_proof_service() -> None:
         result = analyze_text(request)
 
     assert result.blockchain == proof
+
+
+def test_analyze_text_uses_linguistic_prediction_service() -> None:
+    """
+    Verifies that the analysis service delegates verdicts to Stage 4.
+    """
+    request = AnalyzeRequest(text="Bitcoin rises after Reuters report.")
+    prediction = LinguisticPrediction(
+        status=VerificationStatus.REAL,
+        confidence=0.91,
+        explanation="RoBERTa classified the article as likely credible.",
+    )
+
+    with patch("models.analysis_service.predict_linguistic_risk", return_value=prediction):
+        result = analyze_text(request)
+
+    assert result.status == VerificationStatus.REAL
+    assert result.confidence == 0.91
+    assert result.explanation == prediction.explanation

@@ -10,9 +10,11 @@ The staged backend currently includes:
 * `POST /analyze`
 * Pydantic request/response schemas
 * Frontend-compatible response shape
+* Stage 4 RoBERTa inference service using Hugging Face `transformers`
 * Stage 2 topic verification with spaCy NER and Google CSE support
 * Stage 3 integrity proof with IPFS pinning and EVM testnet anchoring support
-* Local deterministic placeholder logic for later RoBERTa and SHAP integration
+* Local deterministic fallback logic when RoBERTa is not configured
+* Placeholder SHAP-style attribution until the SHAP stage is implemented
 * React frontend integration with the FastAPI `/analyze` endpoint
 
 ## Prerequisites
@@ -52,6 +54,14 @@ Create backend environment settings:
 ```powershell
 Copy-Item .env.example .env
 ```
+
+For real RoBERTa inference, fill this value in `backend/.env`:
+
+```text
+ROBERTA_MODEL_NAME_OR_PATH=
+```
+
+This can be either a local fine-tuned checkpoint path or a Hugging Face model ID. If it is empty, the backend keeps running with fallback linguistic logic.
 
 For real Google topic verification, fill these values in `backend/.env`:
 

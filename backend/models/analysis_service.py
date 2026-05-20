@@ -8,6 +8,7 @@ from app.schemas.analysis import (
     VerificationStatus,
 )
 from models.integrity_proof import create_integrity_proof
+from models.linguistic import LinguisticPrediction, predict_linguistic_risk
 from models.verification import verify_topics
 
 
@@ -21,10 +22,11 @@ def analyze_text(request: AnalyzeRequest) -> AnalyzeResponse:
     Returns:
         AnalyzeResponse: A complete frontend-compatible verification report.
     """
-    status = _estimate_status(request.text)
-    confidence = _estimate_confidence(request.text, status)
+    prediction = _predict_with_fallback(request.text)
+    status = prediction.status
+    confidence = prediction.confidence
     report_id = str(uuid4())
-    explanation = _build_explanation(status)
+    explanation = prediction.explanation
     shap_data = _build_initial_attributions(request.text)
     sources = verify_topics(request.text)
     report_payload = {
@@ -51,6 +53,28 @@ def analyze_text(request: AnalyzeRequest) -> AnalyzeResponse:
         sources=sources,
         blockchain=create_integrity_proof(report_id, report_payload),
     )
+
+
+def _predict_with_fallback(text: str) -> LinguisticPrediction:
+    """
+    Uses RoBERTa when configured, otherwise falls back to local heuristics.
+
+    Args:
+        text (str): The analyzed text.
+
+    Returns:
+        LinguisticPrediction: Linguistic verdict and explanation.
+    """
+    try:
+        return predict_linguistic_risk(text)
+    except RuntimeError:
+        status = _estimate_status(text)
+        confidence = _estimate_confidence(text, status)
+        return LinguisticPrediction(
+            status=status,
+            confidence=confidence,
+            explanation=_build_fallback_explanation(status),
+        )
 
 
 def _estimate_status(text: str) -> VerificationStatus:
@@ -97,7 +121,7 @@ def _estimate_confidence(text: str, status: VerificationStatus) -> float:
     return round(min(base_scores[status] + length_bonus, 0.9), 3)
 
 
-def _build_explanation(status: VerificationStatus) -> str:
+def _build_fallback_explanation(status: VerificationStatus) -> str:
     """
     Builds a concise Stage 1 explanation.
 
@@ -109,16 +133,16 @@ def _build_explanation(status: VerificationStatus) -> str:
     """
     explanations = {
         VerificationStatus.REAL: (
-            "The text contains authority-oriented language and does not show "
-            "strong sensational risk markers in the Stage 1 backend."
+            "RoBERTa is not configured yet. The fallback linguistic scanner "
+            "found authority-oriented language and limited risk markers."
         ),
         VerificationStatus.FAKE: (
-            "The text contains multiple high-risk linguistic markers commonly "
-            "seen in sensational financial misinformation."
+            "RoBERTa is not configured yet. The fallback linguistic scanner "
+            "found multiple high-risk sensational markers."
         ),
         VerificationStatus.UNCERTAIN: (
-            "The Stage 1 backend found mixed or insufficient signals. Real "
-            "RoBERTa, SHAP, and source verification will refine this verdict."
+            "RoBERTa is not configured yet. The fallback linguistic scanner "
+            "found mixed or insufficient signals."
         ),
     }
     return explanations[status]
