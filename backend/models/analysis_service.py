@@ -17,6 +17,7 @@ from app.schemas.analysis import (
     ShapExplanation,
     VerificationStatus,
     ClassificationDetail,
+    SourceMatch,
     ExplanationDetail,
     VerificationDetail,
     SourceComparison,
@@ -51,6 +52,31 @@ def analyze_text(request: AnalyzeRequest, access_token: str | None = None) -> An
     language_val_early = (request.language or "en").lower().strip()
     fast_mode_val = getattr(request, "fast_mode", False)
     sources, search_context = verify_topics_with_context(analysis_text, language=language_val_early)
+
+    # Self-heal: if the search returned articles but the deduplicated sources
+    # list is empty (e.g. none matched the authoritative whitelist), build
+    # SourceMatch entries directly from the retrieved articles so the frontend
+    # always receives the sources it needs.
+    if not sources and search_context:
+        logger.info(
+            "[ANALYZE] sources empty but %d articles found; building sources from articles.",
+            len(search_context),
+        )
+        seen_names: set[str] = set()
+        for item in search_context:
+            name = item.get("source") or "Unknown"
+            if name.lower() in seen_names:
+                continue
+            seen_names.add(name.lower())
+            sources.append(SourceMatch(
+                name=name,
+                confirmed=False,
+                url=item.get("link"),
+            ))
+    logger.info(
+        "[ANALYZE] verify_topics_with_context -> sources=%d search_context=%d",
+        len(sources), len(search_context),
+    )
     prediction = _predict_with_fallback(
         analysis_text,
         search_context=search_context,
@@ -76,15 +102,59 @@ def analyze_text(request: AnalyzeRequest, access_token: str | None = None) -> An
         explanation=prediction.explanation,
     )
 
+    # Verification Score: improved scoring based on article coverage and source quality.
+    #
+    # New logic:
+    #   - 0 articles found → 0% (no coverage of the claim at all)
+    #   - 1-2 articles found → 40% base (some coverage)
+    #   - 3-5 articles found → 55% base (good coverage)
+    #   - 6+ articles found → 70% base (strong coverage)
+    #   - Each confirmed authoritative source → +10% bonus (up to +30%)
+    #   - Capped at 100%
+    #
+    # NOTE: This must be calculated BEFORE _calculate_signals() below.
+    has_matching_articles = len(search_context) > 0
+    confirmed_count = sum(1 for s in sources if s.confirmed)
+    article_count = len(search_context)
+
+    if not has_matching_articles:
+        verification_score = 0.0
+    else:
+        if article_count <= 2:
+            base_score = 0.40
+        elif article_count <= 5:
+            base_score = 0.55
+        else:
+            base_score = 0.70
+        authority_bonus = min(confirmed_count * 0.10, 0.30)
+        verification_score = round(min(base_score + authority_bonus, 1.0), 2)
+
     if prediction.attributions:
         raw_shap = [
             ShapExplanation(word=item["word"], weight=item["weight"])
             for item in prediction.attributions
         ]
-        # Guard: if Gemini returned all near-zero weights (indecisive on neutral text),
+        # Guard 1: if Gemini returned all near-zero weights (indecisive on neutral text),
         # discard them and fall through to the linguistic keyword fallback instead.
         max_abs_weight = max((abs(s.weight) for s in raw_shap), default=0.0)
-        if max_abs_weight >= 0.05:
+
+        # Guard 2: detect uniform extreme weights (all identical -1.0 or 1.0).
+        # When all weights are the same extreme value, the LLM failed to differentiate
+        # tokens, so the attributions are meaningless. Fall back to linguistic logic.
+        unique_weights = set(round(s.weight, 2) for s in raw_shap)
+        is_uniform_extreme = (
+            len(raw_shap) >= 3
+            and len(unique_weights) <= 2
+            and max_abs_weight >= 0.9
+        )
+
+        if is_uniform_extreme:
+            logger.info(
+                "Gemini attributions are uniform extreme weights (unique=%s); using linguistic fallback.",
+                unique_weights,
+            )
+            shap_data = _generate_shap_with_fallback(analysis_text)
+        elif max_abs_weight >= 0.05:
             shap_data = raw_shap
         else:
             logger.info(
@@ -94,42 +164,26 @@ def analyze_text(request: AnalyzeRequest, access_token: str | None = None) -> An
             shap_data = _generate_shap_with_fallback(analysis_text)
     else:
         shap_data = _generate_shap_with_fallback(analysis_text)
-    
+
     # Calculate top factors and summary
     top_factors = [item.word for item in shap_data if item.weight > 0][:3]
     if not top_factors:
         top_factors = [item.word for item in shap_data][:2]
-    
+
     summary = f"Token attribution highlights key words: {', '.join(top_factors)}" if top_factors else "No significant keywords detected."
+
+    # Calculate dynamic factual and bias signals based on analysis
+    factual_signal, bias_signal = _calculate_signals(
+        shap_data, status, confidence, verification_score, confirmed_count
+    )
 
     explanation_detail = ExplanationDetail(
         shapData=shap_data,
         summary=summary,
         topFactors=top_factors,
+        factualSignal=factual_signal,
+        biasSignal=bias_signal,
     )
-
-    # sources were already fetched and populated via verify_topics_with_context above
-
-    # Verification Score: tiered scoring based on related article coverage.
-    #
-    # Old logic (always 0%) only confirmed Reuters/Bloomberg/CoinDesk/SEC by name.
-    # Google News RSS returns real sources like Coinpedia, blockhead.co etc. — these
-    # were never in the hardcoded set, making the score permanently 0%.
-    #
-    # New logic:
-    #   - 0 articles found → 0% (no coverage of the claim at all)
-    #   - Any articles found → 25% base (the claim is news-worthy / real event)
-    #   - Each confirmed authoritative source → +15% bonus (up to +75%)
-    #   - Capped at 100%
-    has_matching_articles = len(search_context) > 0
-    confirmed_count = sum(1 for s in sources if s.confirmed)
-
-    if not has_matching_articles:
-        verification_score = 0.0
-    else:
-        base_score = 0.25
-        authority_bonus = min(confirmed_count * 0.15, 0.75)
-        verification_score = round(min(base_score + authority_bonus, 1.0), 2)
 
     explanation_verification = f"{int(verification_score * 100)}% of claims verified in authoritative sources"
 
@@ -181,11 +235,11 @@ def analyze_text(request: AnalyzeRequest, access_token: str | None = None) -> An
 
     # Determine final assessment label
     if final_risk_score >= 0.65:
-        final_label = "likely_fake"
-        label_desc = "likely fake"
+        final_label = "fake"
+        label_desc = "fake"
     elif final_risk_score <= 0.35:
-        final_label = "likely_real"
-        label_desc = "likely real"
+        final_label = "real"
+        label_desc = "real"
     else:
         final_label = "uncertain"
         label_desc = "uncertain"
@@ -969,6 +1023,56 @@ _FAKE_SIGNAL_KEYWORDS: dict[str, float] = {
     "approved": -0.55, "filed": -0.50, "court": -0.48, "government": -0.52,
     "research": -0.45, "study": -0.40, "data": -0.38, "analysis": -0.42,
 }
+
+
+def _calculate_signals(
+    shap_data: list[ShapExplanation],
+    status: VerificationStatus,
+    confidence: float,
+    verification_score: float,
+    confirmed_count: int,
+) -> tuple[str, str]:
+    """
+    Calculates dynamic factual and bias signals based on analysis results.
+
+    Args:
+        shap_data: Token attributions.
+        status: Classification verdict.
+        confidence: Model confidence score.
+        verification_score: Source verification score.
+        confirmed_count: Number of confirmed authoritative sources.
+
+    Returns:
+        tuple[str, str]: (factual_signal, bias_signal) - each being "Low", "Medium", or "High".
+    """
+    # Factual Signal: based on verification score and confirmed sources
+    if verification_score >= 0.6 and confirmed_count >= 2:
+        factual_signal = "High"
+    elif verification_score >= 0.4 or confirmed_count >= 1:
+        factual_signal = "Medium"
+    else:
+        factual_signal = "Low"
+
+    # Bias Signal: based on SHAP weights and classification
+    if not shap_data:
+        bias_signal = "Medium"
+    else:
+        # Count tokens with positive weights (fake indicators)
+        fake_indicators = sum(1 for item in shap_data if item.weight > 0.3)
+        total_tokens = len(shap_data)
+        fake_ratio = fake_indicators / total_tokens if total_tokens > 0 else 0
+
+        # Also consider the classification
+        if status == VerificationStatus.FAKE and confidence >= 0.7:
+            bias_signal = "Critical"
+        elif fake_ratio >= 0.5 or (status == VerificationStatus.FAKE and confidence >= 0.5):
+            bias_signal = "High"
+        elif fake_ratio >= 0.3 or status == VerificationStatus.UNCERTAIN:
+            bias_signal = "Medium"
+        else:
+            bias_signal = "Low"
+
+    return factual_signal, bias_signal
 
 
 def _token_weight(word: str) -> float:

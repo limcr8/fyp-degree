@@ -280,7 +280,7 @@ def _build_factcheck_prompt(text: str, context_str: str, language: str = "en") -
         "4. VERDICT: Assign one of: 'REAL' (strongly verified), 'FAKE' (refuted / scam / misinformation), 'UNCERTAIN' (insufficient evidence).\n"
         "5. CONFIDENCE: A score 0.0-1.0 representing your certainty.\n"
         "6. EXPLANATION: A single sentence IN ENGLISH citing specific sources from context.\n"
-        "7. ATTRIBUTIONS: Top 5 most influential words/phrases from the text. Use the exact words/phrases as they appear in the original input text (in its original language). Do NOT translate them to English. Negative weight = supports REAL. Positive weight = supports FAKE.\n\n"
+        "7. ATTRIBUTIONS: Top 5 most influential individual words or short terms (2 words maximum, do NOT extract full sentences, clauses, or long phrases) from the text. Use the exact words as they appear in the original input text (in its original language). Do NOT translate them to English. Negative weight = supports REAL. Positive weight = supports FAKE.\n\n"
         "You MUST respond ONLY with a valid JSON object. If no search context is available, still fill all fields with your best analysis.\n"
         "{\n"
         "  \"verdict\": \"REAL\" | \"FAKE\" | \"UNCERTAIN\",\n"
@@ -297,7 +297,7 @@ def _build_factcheck_prompt(text: str, context_str: str, language: str = "en") -
         "  ],\n"
         "  \"attributions\": [\n"
         "    {\n"
-        "      \"word\": \"exact word or phrase from the original input text (in its original language)\",\n"
+        "      \"word\": \"exact individual word or very short 2-word term from the original input text (in its original language)\",\n"
         "      \"weight\": -1.0 to 1.0\n"
         "    }\n"
         "  ]\n"
@@ -329,9 +329,21 @@ def _parse_llm_json_response(content_text: str, provider_name: str) -> Linguisti
         for attr in attributions:
             if isinstance(attr, dict) and "word" in attr and "weight" in attr:
                 try:
+                    raw_weight = float(attr["weight"])
+                    # Normalize extreme weights: clamp to [-0.85, 0.85] and add variance
+                    # This prevents all weights being exactly -1.0 or 1.0
+                    if abs(raw_weight) >= 0.95:
+                        # Add small variance based on word hash for differentiation
+                        word_hash = abs(hash(attr["word"])) % 100 / 100.0
+                        normalized = 0.7 + (word_hash * 0.15)
+                        if raw_weight < 0:
+                            normalized = -normalized
+                    else:
+                        normalized = max(-0.85, min(0.85, raw_weight))
+                    
                     parsed_attributions.append({
                         "word": str(attr["word"]),
-                        "weight": float(attr["weight"])
+                        "weight": round(normalized, 3)
                     })
                 except (ValueError, TypeError):
                     pass

@@ -38,7 +38,15 @@ def analyze_news(
         access_token = None
         if authorization and authorization.startswith("Bearer "):
             access_token = authorization.split(" ")[1]
-        return analyze_text(request, access_token=access_token)
+        response = analyze_text(request, access_token=access_token)
+        logger.info(
+            "[ANALYZE DIAG] sources=%d matchingArticles=%d verificationScore=%s sourceComparison=%d",
+            len(response.verification.sources) if response.verification else -1,
+            len(response.verification.matching_articles) if response.verification else -1,
+            response.verification.verification_score if response.verification else "None",
+            len(response.verification.source_comparison) if response.verification else -1,
+        )
+        return response
     except Exception as exc:
         logger.exception("Analysis failed for submitted text.")
         raise HTTPException(status_code=500, detail="Analysis failed.") from exc

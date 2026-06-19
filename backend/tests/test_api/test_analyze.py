@@ -342,7 +342,7 @@ def test_trending_endpoint_success() -> None:
     assert r1.status_code == 200
     assert r2.status_code == 200
 
-    res = client.get("/api/v1/trending?language=en&limit=5")
+    res = client.get("/api/v1/trending?language=en&limit=15")
     assert res.status_code == 200
     body = res.json()
     assert "trending" in body

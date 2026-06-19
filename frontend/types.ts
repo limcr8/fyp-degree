@@ -35,6 +35,8 @@ export interface ExplanationDetail {
   shapData: ShapExplanation[];
   summary: string;
   topFactors: string[];
+  factualSignal?: string;
+  biasSignal?: string;
 }
 
 export interface SourceComparison {

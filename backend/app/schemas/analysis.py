@@ -102,6 +102,8 @@ class ExplanationDetail(BaseModel):
     shap_data: list[ShapExplanation] = Field(alias="shapData")
     summary: str
     top_factors: list[str] = Field(alias="topFactors")
+    factual_signal: str = Field(default="Medium", alias="factualSignal")
+    bias_signal: str = Field(default="Low", alias="biasSignal")
 
     model_config = ConfigDict(populate_by_name=True)
 

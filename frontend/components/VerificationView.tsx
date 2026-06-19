@@ -28,6 +28,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({
   setIsVerifying
 }) => {
   const [showDisputeModal, setShowDisputeModal] = useState(false);
+  const [showSourceDetails, setShowSourceDetails] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState('auto');
   const [selectedPlatform, setSelectedPlatform] = useState('auto');
@@ -251,6 +252,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({
         await saveVerificationResult(user.uid, apiResult);
       }
     } catch (err) {
+      console.error("Verification failed:", err);
       alert("Verification failed. Check console for details.");
     } finally {
       setIsVerifying(false);
@@ -398,17 +400,33 @@ const VerificationView: React.FC<VerificationViewProps> = ({
       {/* Results Section */}
       {result && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-slide-up">
-          {/* Main Verdict */}
+          {/* Main Verdict + AI Analysis Summary (merged) */}
           {(() => {
             const label = result.finalAssessment?.label || result.status || 'UNCERTAIN';
             const score = result.finalAssessment ? result.finalAssessment.score : (result.confidence !== undefined ? result.confidence : 0.5);
-            const reasoning = result.finalAssessment?.reasoning || result.explanation;
+            const reasoning = result.finalAssessment?.reasoning || 
+              (typeof result.explanation === 'string' ? result.explanation : result.explanation?.summary) || 
+              result.classification?.explanation || 
+              '';
             const labelUpper = label.toUpperCase().replace('_', ' ');
             const isReal = labelUpper.includes('REAL');
             const isFake = labelUpper.includes('FAKE');
 
+            // Evidence data
+            const aiSummary = result.verification?.summary || '';
+            const shapData = (result.explanation?.shapData || []).slice().sort((a,b) => Math.abs(b.weight) - Math.abs(a.weight));
+            const sourceComparison = result.verification?.sourceComparison || [];
+            const matchingArticles = result.verification?.matchingArticles || [];
+            const factualSignal = (result.explanation as any)?.factualSignal || 'Medium';
+            const biasSignal = (result.explanation as any)?.biasSignal || 'Low';
+            const realFactors = shapData.filter(s => s.weight < -0.1).slice(0, 3);
+            const fakeFactors = shapData.filter(s => s.weight > 0.1).slice(0, 3);
+            const supportingSources = sourceComparison.filter((s: any) => s.relationship === 'SUPPORTS');
+            const refutingSources = sourceComparison.filter((s: any) => s.relationship === 'REFUTES');
+
             return (
-              <div className={`lg:col-span-3 p-8 rounded-2xl border ${getStatusBg(label)} flex flex-col items-center justify-center text-center`}>
+              <div className={`lg:col-span-3 p-8 rounded-2xl border ${getStatusBg(label)} flex flex-col items-center text-center`}>
+                {/* ── Verdict Header ── */}
                 <div className={`w-20 h-20 rounded-full mb-4 flex items-center justify-center ${getStatusColor(label)} bg-white shadow-xl`}>
                    {isReal ? (
                      <svg className="w-12 h-12" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
@@ -426,6 +444,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({
                     <div className="text-center">
                       <span className="block text-[10px] font-bold uppercase text-slate-400">Risk Score</span>
                       <span className="text-2xl font-black">{(score * 100).toFixed(0)}%</span>
+                      <span className="block text-[8px] text-slate-400 mt-0.5">{score <= 0.35 ? '(Low fake risk)' : score >= 0.65 ? '(High fake risk)' : '(Uncertain)'}</span>
                     </div>
                     <div className="h-10 w-px bg-slate-300"></div>
                     <div className="text-center">
@@ -439,155 +458,352 @@ const VerificationView: React.FC<VerificationViewProps> = ({
                     </span>
                   )}
                 </div>
+
+                {/* ── Why this verdict? ── */}
                 <p className={`mt-6 text-lg max-w-xl leading-relaxed ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
                   {reasoning}
                 </p>
+
+                {/* ── Evidence Columns ── */}
+                <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 text-left">
+                  {/* Evidence for REAL */}
+                  <div className={`p-3 rounded-xl border bg-white/70 backdrop-blur-sm ${isDarkMode ? 'border-emerald-500/20' : 'border-emerald-200'}`}>
+                    <h6 className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 mb-2 flex items-center gap-1">
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                      Evidence for REAL
+                    </h6>
+                    {realFactors.length > 0 ? (
+                      <ul className="space-y-1.5">
+                        {realFactors.map((f, i) => (
+                          <li key={i} className="flex items-start gap-1.5 text-[11px]">
+                            <span className="mono bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded shrink-0">“{f.word}”</span>
+                            <span className={`${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>credible language detected</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-[11px] italic opacity-50">No strong credible signals found</p>
+                    )}
+                    {supportingSources.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-emerald-500/10">
+                        {supportingSources.slice(0, 2).map((s: any, i: number) => (
+                          <p key={i} className={`text-[10px] italic mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
+                            <span className="font-bold text-emerald-600">{s.source_name}:</span> “{s.key_finding}”
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Evidence for FAKE */}
+                  <div className={`p-3 rounded-xl border bg-white/70 backdrop-blur-sm ${isDarkMode ? 'border-rose-500/20' : 'border-rose-200'}`}>
+                    <h6 className="text-[10px] font-bold uppercase tracking-wider text-rose-600 mb-2 flex items-center gap-1">
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                      Evidence for FAKE
+                    </h6>
+                    {fakeFactors.length > 0 ? (
+                      <ul className="space-y-1.5">
+                        {fakeFactors.map((f, i) => (
+                          <li key={i} className="flex items-start gap-1.5 text-[11px]">
+                            <span className="mono bg-rose-500/10 text-rose-600 px-1.5 py-0.5 rounded shrink-0">“{f.word}”</span>
+                            <span className={`${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>suspicious / biased language</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-[11px] italic opacity-50">No strong misinformation signals found</p>
+                    )}
+                    {refutingSources.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-rose-500/10">
+                        {refutingSources.slice(0, 2).map((s: any, i: number) => (
+                          <p key={i} className={`text-[10px] italic mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
+                            <span className="font-bold text-rose-600">{s.source_name}:</span> “{s.key_finding}”
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Signal Indicators ── */}
+                <div className="flex flex-wrap justify-center gap-2 mt-6">
+                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
+                    factualSignal === 'High' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' :
+                    factualSignal === 'Low' ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' :
+                    'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                  }`}>
+                    Factual Signal: {factualSignal}
+                  </span>
+                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
+                    (biasSignal === 'Critical' || biasSignal === 'High') ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' :
+                    biasSignal === 'Medium' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' :
+                    'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                  }`}>
+                    Bias Signal: {biasSignal}
+                  </span>
+                  {matchingArticles.length > 0 && (
+                    <span className="text-[10px] font-bold px-2.5 py-1 rounded-full border bg-blue-500/10 text-blue-500 border-blue-500/20">
+                      {new Set(matchingArticles.map(a => a.source.toLowerCase())).size} source{new Set(matchingArticles.map(a => a.source.toLowerCase())).size !== 1 ? 's' : ''} cross-referenced
+                    </span>
+                  )}
+                </div>
+
+                {/* ── Claim Summary ── */}
+                {aiSummary && (
+                  <div className={`w-full text-left pt-4 mt-6 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-300/40'}`}>
+                    <h5 className={`text-[10px] font-bold uppercase tracking-wider opacity-50 mb-2`}>Claim Summary</h5>
+                    <p className={`text-sm leading-relaxed italic ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                      “{aiSummary}”
+                    </p>
+                  </div>
+                )}
               </div>
             );
           })()}
 
-          {/* Source Verification — unified card with inline proof links */}
-          <div className={`p-6 rounded-2xl border ${isDarkMode ? 'bg-[#1E293B] border-[#334155]' : 'bg-white border-[#E2E8F0] shadow-sm'}`}>
-            <h4 className="text-lg font-bold mb-1 flex items-center gap-2">
-               <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04M12 2.944a11.955 11.955 0 01-4.532 10.948m14.75 0a11.955 11.955 0 01-4.532 10.948" /></svg>
-               Source Verification
-             </h4>
-             <p className={`text-[10px] mb-4 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Cross-referenced against authoritative sources. Click any validated link to view the source article.</p>
+          {/* Source Verification — combined card with summary + detailed toggle */}
+          {(() => {
+            const rawSources = (result.verification?.sources || result.sources || []);
+            const matchingArticles = result.verification?.matchingArticles || (result.verification as any)?.matching_articles || [];
 
-             {/* Build a merged list: sources enriched with matching article URLs */}
-             {(() => {
-               const rawSources = (result.verification?.sources || result.sources || []);
-               const sources = rawSources.filter(s => {
-                 const nameLower = s.name.toLowerCase();
-                 const isLegacyHardcoded = ["reuters", "bloomberg", "coindesk", "sec"].includes(nameLower);
-                 return !(isLegacyHardcoded && !s.confirmed);
-               });
-               const matchingArticles = result.verification?.matchingArticles || [];
+            // Build the unified source list.
+            // 1. Start with the backend's sources array (deduplicated SourceMatch list).
+            // 2. If that's empty but matchingArticles exist, derive sources from them.
+            let sources: { name: string; confirmed: boolean; url?: string }[] = [];
+            if (Array.isArray(rawSources)) {
+              sources = rawSources
+                .filter(s => s && s.name)
+                .map(s => ({ name: s.name, confirmed: !!s.confirmed, url: s.url || undefined }));
+            }
 
-               // Map source name → matching article (case-insensitive)
-               const articleBySource: Record<string, typeof matchingArticles[0]> = {};
-               matchingArticles.forEach(a => {
-                 articleBySource[a.source.toLowerCase()] = a;
-               });
+            // Build a lookup of source names we already have (case-insensitive)
+            const knownNames = new Set(
+              sources
+                .map(s => s.name?.toLowerCase())
+                .filter(Boolean)
+            );
 
-               return (
-                 <div className="space-y-2.5">
-                   {sources.map((source, idx) => {
-                     const match = articleBySource[source.name.toLowerCase()];
-                     return (
-                       <div key={idx} className={`rounded-xl border transition-all ${
-                         source.confirmed
-                           ? isDarkMode ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-emerald-50/60 border-emerald-200'
-                           : isDarkMode ? 'bg-[#0F172A] border-[#1E293B]' : 'bg-slate-50 border-slate-200'
-                       }`}>
-                         <div className="flex items-center justify-between gap-2 px-3 py-2.5">
-                           <div className="flex items-center gap-2 min-w-0">
-                             {/* Favicon */}
-                             <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${
-                               source.confirmed ? 'bg-emerald-500' : isDarkMode ? 'bg-slate-700' : 'bg-slate-200'
-                             }`}>
-                               {source.confirmed ? (
-                                 <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-                               ) : (
-                                 <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                               )}
-                             </div>
-                             <span className={`font-bold text-xs truncate ${source.confirmed ? 'text-emerald-600' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                               {source.name}
-                             </span>
-                           </div>
-                           {source.confirmed ? (
-                             <span className="text-emerald-500 text-[9px] font-black bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30 shrink-0 uppercase tracking-wide">✓ Validated</span>
-                           ) : (
-                             <span className="text-slate-400 text-[9px] font-black bg-slate-500/10 px-2 py-0.5 rounded-full border border-slate-400/20 shrink-0 uppercase tracking-wide">No Mention</span>
-                           )}
-                         </div>
+            // Merge in any matching articles whose source isn't already represented
+            if (Array.isArray(matchingArticles)) {
+              matchingArticles.forEach(a => {
+                if (a && a.source) {
+                  const srcLower = a.source.toLowerCase();
+                  if (!knownNames.has(srcLower)) {
+                    sources.push({ name: a.source, confirmed: false, url: a.link });
+                    knownNames.add(srcLower);
+                  }
+                }
+              });
+            }
 
-                         {/* Inline proof link when a matching article exists */}
-                         {match && (
-                           <div className={`px-3 pb-2.5 border-t ${
-                             isDarkMode ? 'border-emerald-500/10' : 'border-emerald-100'
-                           }`}>
-                             <a
-                               href={match.link}
-                               target="_blank"
-                               rel="noopener noreferrer"
-                               className="flex items-start gap-2 mt-2 group"
-                             >
-                               <svg className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                               <span className="text-[10px] font-semibold text-emerald-500 group-hover:text-emerald-400 group-hover:underline leading-snug line-clamp-2">
-                                 {match.title}
-                               </span>
-                             </a>
-                             {match.snippet && (
-                               <p className={`text-[9px] mt-1.5 leading-relaxed line-clamp-2 pl-5 ${
-                                 isDarkMode ? 'text-slate-500' : 'text-slate-400'
-                               }`}>
-                                 {match.snippet}
-                               </p>
-                             )}
-                           </div>
-                         )}
+            // Enrich: if a source row has no URL but a matching article does, attach it
+            sources = sources.map(s => {
+              if (s && s.name) {
+                const match = matchingArticles.find(a => a && a.source && a.source.toLowerCase() === s.name.toLowerCase());
+                if (!s.url && match) return { ...s, url: match.link };
+              }
+              return s;
+            });
 
-                         {/* Show source URL directly if available on the source object */}
-                         {!match && source.url && (
-                           <div className={`px-3 pb-2.5 border-t ${
-                             isDarkMode ? 'border-emerald-500/10' : 'border-emerald-100'
-                           }`}>
-                             <a
-                               href={source.url}
-                               target="_blank"
-                               rel="noopener noreferrer"
-                               className="flex items-center gap-1.5 mt-2 text-[10px] font-semibold text-emerald-500 hover:text-emerald-400 hover:underline"
-                             >
-                               <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                               View source
-                             </a>
-                           </div>
-                         )}
-                       </div>
-                     );
-                   })}
-                 </div>
-               );
-             })()}
+            const sourceComparison = result.verification?.sourceComparison || (result.verification as any)?.source_comparison || [];
 
-             {/* Grounding Score bar */}
-             <div className="mt-5 pt-5 border-t border-slate-200/20">
-                <div className="flex justify-between items-end mb-2">
-                  <span className="text-xs font-bold uppercase opacity-50">Grounding Score</span>
-                  <span className={`text-xl font-black ${(() => {
-                    const label = (result.finalAssessment?.label || result.status || '').toUpperCase();
-                    return label.includes('FAKE') ? 'text-rose-500' : 'text-emerald-500';
-                  })()}`}>
-                     {(() => {
-                       if (result.verification && result.verification.verificationScore !== undefined) {
-                         return `${(result.verification.verificationScore * 100).toFixed(0)}%`;
-                       }
-                       const label = (result.finalAssessment?.label || result.status || '').toUpperCase();
-                       return label.includes('FAKE') ? '0%' : '88%';
-                     })()}
-                  </span>
+            // Build relationship map from source comparison (semantic analysis)
+            const relationshipMap: Record<string, string> = {};
+            if (Array.isArray(sourceComparison)) {
+              sourceComparison.forEach((sc: any) => {
+                if (sc && sc.source_name) {
+                  relationshipMap[sc.source_name.toLowerCase()] = sc.relationship;
+                }
+              });
+            }
+
+            // Build merged unified list: one row per source with relationship + finding
+            const articleBySource: Record<string, typeof matchingArticles[0]> = {};
+            if (Array.isArray(matchingArticles)) {
+              matchingArticles.forEach(a => {
+                if (a && a.source) {
+                  articleBySource[a.source.toLowerCase()] = a;
+                }
+              });
+            }
+            const findingBySource: Record<string, string> = {};
+            if (Array.isArray(sourceComparison)) {
+              sourceComparison.forEach((sc: any) => {
+                if (sc && sc.source_name) {
+                  findingBySource[sc.source_name.toLowerCase()] = sc.key_finding;
+                }
+              });
+            }
+
+            const totalCount = sources.length;
+            const confirmedCount = sources.filter(s => s.confirmed).length;
+            const supportsCount = Object.values(relationshipMap).filter((r: any) => r === 'SUPPORTS').length;
+            const refutesCount = Object.values(relationshipMap).filter((r: any) => r === 'REFUTES').length;
+            const unrelatedCount = Object.values(relationshipMap).filter((r: any) => r === 'UNRELATED').length;
+
+            // Helper to map relationship to display
+            const getRelationBadge = (relation: string) => {
+              if (relation === 'SUPPORTS') return { text: '✓ Supports', cls: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' };
+              if (relation === 'REFUTES') return { text: '✗ Refutes', cls: 'bg-rose-500/10 text-rose-500 border-rose-500/20' };
+              if (relation === 'RELATED') return { text: '— Related', cls: 'bg-amber-500/10 text-amber-500 border-amber-500/20' };
+              return { text: '— Unrelated', cls: 'bg-slate-500/10 text-slate-400 border-slate-500/20' };
+            };
+
+            return (
+              <div className={`lg:col-span-3 p-6 rounded-2xl border ${isDarkMode ? 'bg-[#1E293B] border-[#334155]' : 'bg-white border-[#E2E8F0] shadow-sm'}`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04M12 2.944a11.955 11.955 0 01-4.532 10.948m14.75 0a11.955 11.955 0 01-4.532 10.948" /></svg>
+                    <h4 className="text-lg font-bold">Source Verification</h4>
+                    {sourceComparison.length > 0 && (
+                      <span className={`ml-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${isDarkMode ? 'bg-violet-500/10 border-violet-500/20 text-violet-400' : 'bg-violet-50 border-violet-200 text-violet-600'}`}>
+                        AI Semantic Analysis
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className={`w-full h-2 rounded-full ${isDarkMode ? 'bg-[#0F172A]' : 'bg-slate-100'} overflow-hidden`}>
-                   <div 
-                     className={`h-full transition-all duration-1000 ${(() => {
+                <p className={`text-[10px] mb-4 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Cross-referenced against authoritative sources with semantic relationship analysis.</p>
+
+                {/* ── DEFAULT VIEW: Compact Summary ── */}
+                <div className={`p-4 rounded-xl mb-4 ${isDarkMode ? 'bg-[#0F172A]' : 'bg-slate-50'}`}>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="text-center">
+                      <span className={`block text-[9px] font-bold uppercase opacity-50 mb-1`}>Sources Found</span>
+                      <span className="text-2xl font-black text-slate-600 dark:text-slate-200">{totalCount}</span>
+                    </div>
+                    <div className="text-center">
+                      <span className={`block text-[9px] font-bold uppercase opacity-50 mb-1`}>Supporting</span>
+                      <span className="text-2xl font-black text-emerald-500">{supportsCount}</span>
+                      <span className="block text-[8px] text-slate-400 mt-0.5">{totalCount > 0 ? `(${Math.round((supportsCount / totalCount) * 100)}%)` : ''}</span>
+                    </div>
+                    <div className="text-center">
+                      <span className={`block text-[9px] font-bold uppercase opacity-50 mb-1`}>Refutes</span>
+                      <span className="text-2xl font-black text-rose-500">{refutesCount}</span>
+                      <span className="block text-[8px] text-slate-400 mt-0.5">{totalCount > 0 ? `(${Math.round((refutesCount / totalCount) * 100)}%)` : ''}</span>
+                    </div>
+                    <div className="text-center">
+                      <span className={`block text-[9px] font-bold uppercase opacity-50 mb-1`}>Trusted Outlets</span>
+                      <span className="text-2xl font-black text-emerald-600">{confirmedCount}/{totalCount}</span>
+                      <span className="block text-[8px] text-slate-400 mt-0.5">{totalCount > 0 ? `(${Math.round((confirmedCount / totalCount) * 100)}%)` : ''}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── EXPANDABLE VIEW: Detailed Table ── */}
+                {showSourceDetails && (
+                  <div className="animate-fade-in overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className={`border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                          <th className="py-2 pr-3 font-bold uppercase tracking-wider opacity-50 whitespace-nowrap">Validated</th>
+                          <th className="py-2 pr-3 font-bold uppercase tracking-wider opacity-50 whitespace-nowrap">Source</th>
+                          <th className="py-2 pr-3 font-bold uppercase tracking-wider opacity-50 whitespace-nowrap">Relation</th>
+                          <th className="py-2 font-bold uppercase tracking-wider opacity-50">Finding / Article</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sources.map((source, idx) => {
+                          if (!source || !source.name) return null;
+                          const nameLower = source.name.toLowerCase();
+                          const relation = relationshipMap[nameLower] || (source.confirmed ? 'SUPPORTS' : 'UNRELATED');
+                          const badge = getRelationBadge(relation);
+                          const match = articleBySource[nameLower];
+                          const finding = findingBySource[nameLower];
+                          return (
+                            <tr key={idx} className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/20' : 'border-slate-100 hover:bg-slate-50'}`}>
+                              <td className="py-3 pr-3 whitespace-nowrap">
+                                {source.confirmed ? (
+                                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px]">✓</span>
+                                ) : (
+                                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-300 dark:bg-slate-700 text-slate-500 text-[10px]">✗</span>
+                                )}
+                              </td>
+                              <td className="py-3 pr-3 font-bold whitespace-nowrap">
+                                {source.name}
+                                {match && (
+                                  <a href={match.link} target="_blank" rel="noopener noreferrer" className="block text-[9px] font-normal text-emerald-500 hover:underline mt-0.5 truncate max-w-[140px]">{match.title}</a>
+                                )}
+                              </td>
+                              <td className="py-3 pr-3">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase whitespace-nowrap border ${badge.cls}`}>{badge.text}</span>
+                              </td>
+                              <td className={`py-3 italic text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                                {finding ? `"${finding}"` : (match?.snippet ? match.snippet : '—')}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Toggle Button */}
+                <button
+                  onClick={() => setShowSourceDetails(!showSourceDetails)}
+                  className={`mt-3 w-full py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                    isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {showSourceDetails ? 'Hide Details ▲' : 'View Details ▼'}
+                </button>
+
+                {/* Grounding Score bar */}
+                <div className="mt-5 pt-5 border-t border-slate-200/20">
+                   <div className="flex justify-between items-end mb-2">
+                     <span className="text-xs font-bold uppercase opacity-50">Grounding Score</span>
+                     <span className={`text-xl font-black ${(() => {
                        const label = (result.finalAssessment?.label || result.status || '').toUpperCase();
-                       return label.includes('FAKE') ? 'bg-rose-500' : 'bg-emerald-500';
-                     })()}`} 
-                     style={{ 
-                       width: (() => {
-                         if (result.verification && result.verification.verificationScore !== undefined) {
-                           return `${result.verification.verificationScore * 100}%`;
-                         }
-                         const label = (result.finalAssessment?.label || result.status || '').toUpperCase();
-                         return label.includes('FAKE') ? '0%' : '88%';
-                       })()
-                     }}
-                   />
+                       return label.includes('FAKE') ? 'text-rose-500' : 'text-emerald-500';
+                     })()}`}>
+                        {(() => {
+                           const stored = result.verification?.verificationScore !== undefined 
+                             ? result.verification.verificationScore 
+                             : (result.verification as any)?.verification_score;
+                           if (stored !== undefined && stored > 0) {
+                            return `${(stored * 100).toFixed(0)}%`;
+                          }
+                          // Fallback: derive from actual article coverage so we don't
+                          // show a misleading 0% when sources were genuinely found.
+                          if (sources.length > 0) {
+                            const base = sources.length <= 2 ? 0.40 : sources.length <= 5 ? 0.55 : 0.70;
+                            const bonus = Math.min(sources.filter(s => s.confirmed).length * 0.10, 0.30);
+                            return `${Math.round((base + bonus) * 100)}%`;
+                          }
+                          const label = (result.finalAssessment?.label || result.status || '').toUpperCase();
+                          return label.includes('FAKE') ? '0%' : '88%';
+                        })()}
+                     </span>
+                   </div>
+                   <div className={`w-full h-2 rounded-full ${isDarkMode ? 'bg-[#0F172A]' : 'bg-slate-100'} overflow-hidden`}>
+                      <div
+                        className={`h-full transition-all duration-1000 ${(() => {
+                          const label = (result.finalAssessment?.label || result.status || '').toUpperCase();
+                          return label.includes('FAKE') ? 'bg-rose-500' : 'bg-emerald-500';
+                        })()}`}
+                        style={{
+                          width: (() => {
+                            const stored = result.verification?.verificationScore !== undefined 
+                             ? result.verification.verificationScore 
+                             : (result.verification as any)?.verification_score;
+                            if (stored !== undefined && stored > 0) {
+                              return `${stored * 100}%`;
+                            }
+                            if (sources.length > 0) {
+                              const base = sources.length <= 2 ? 0.40 : sources.length <= 5 ? 0.55 : 0.70;
+                              const bonus = Math.min(sources.filter(s => s.confirmed).length * 0.10, 0.30);
+                              return `${(base + bonus) * 100}%`;
+                            }
+                            const label = (result.finalAssessment?.label || result.status || '').toUpperCase();
+                            return label.includes('FAKE') ? '0%' : '88%';
+                          })()
+                        }}
+                      />
+                   </div>
                 </div>
               </div>
-           </div>
+            );
+          })()}
 
           {/* Feature Attribution */}
           <div className={`p-6 rounded-2xl border ${isDarkMode ? 'bg-[#1E293B] border-[#334155]' : 'bg-white border-[#E2E8F0] shadow-sm'}`}>
@@ -597,7 +813,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({
             </h4>
             <p className="text-xs mb-6 opacity-60">SHAP values indicating word contribution towards the verdict:</p>
             <div className="space-y-4">
-              {((result.explanation && result.explanation.shapData) || result.shapData || []).slice().sort((a,b) => Math.abs(b.weight) - Math.abs(a.weight)).map((item, idx) => (
+              {((result.explanation && (result.explanation.shapData || (result.explanation as any).shap_data)) || result.shapData || (result as any).shap_data || []).slice().sort((a,b) => Math.abs(b.weight) - Math.abs(a.weight)).map((item, idx) => (
                 <div key={idx} className="space-y-1.5">
                   <div className="flex justify-between text-[11px] font-bold">
                     <span className="mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-emerald-600">"{item.word}"</span>
@@ -615,13 +831,41 @@ const VerificationView: React.FC<VerificationViewProps> = ({
               ))}
             </div>
             <div className="mt-8 grid grid-cols-2 gap-2">
-              <div className="p-2 rounded-lg bg-emerald-500/5 border border-emerald-500/10 text-center">
+              <div className={`p-2 rounded-lg border text-center ${
+                (() => {
+                  const signal = (result.explanation as any)?.factualSignal || (result.explanation as any)?.factual_signal || 'Medium';
+                  if (signal === 'High') return 'bg-emerald-500/10 border-emerald-500/20';
+                  if (signal === 'Low') return 'bg-rose-500/10 border-rose-500/20';
+                  return 'bg-amber-500/10 border-amber-500/20';
+                })()
+              }`}>
                 <span className="block text-[9px] font-bold uppercase text-emerald-600">Factual Signal</span>
-                <span className="text-xs font-bold text-emerald-500">Low</span>
+                <span className={`text-xs font-bold ${
+                  (() => {
+                    const signal = (result.explanation as any)?.factualSignal || (result.explanation as any)?.factual_signal || 'Medium';
+                    if (signal === 'High') return 'text-emerald-500';
+                    if (signal === 'Low') return 'text-rose-500';
+                    return 'text-amber-500';
+                  })()
+                }`}>{(result.explanation as any)?.factualSignal || (result.explanation as any)?.factual_signal || 'Medium'}</span>
               </div>
-              <div className="p-2 rounded-lg bg-rose-500/5 border border-rose-500/10 text-center">
+              <div className={`p-2 rounded-lg border text-center ${
+                (() => {
+                  const signal = (result.explanation as any)?.biasSignal || (result.explanation as any)?.bias_signal || 'Low';
+                  if (signal === 'Critical' || signal === 'High') return 'bg-rose-500/10 border-rose-500/20';
+                  if (signal === 'Medium') return 'bg-amber-500/10 border-amber-500/20';
+                  return 'bg-emerald-500/10 border-emerald-500/20';
+                })()
+              }`}>
                 <span className="block text-[9px] font-bold uppercase text-rose-600">Biased Signal</span>
-                <span className="text-xs font-bold text-rose-500">Critical</span>
+                <span className={`text-xs font-bold ${
+                  (() => {
+                    const signal = (result.explanation as any)?.biasSignal || (result.explanation as any)?.bias_signal || 'Low';
+                    if (signal === 'Critical' || signal === 'High') return 'text-rose-500';
+                    if (signal === 'Medium') return 'text-amber-500';
+                    return 'text-emerald-500';
+                  })()
+                }`}>{(result.explanation as any)?.biasSignal || 'Low'}</span>
               </div>
             </div>
           </div>
@@ -633,24 +877,38 @@ const VerificationView: React.FC<VerificationViewProps> = ({
                 Integrity Proof
              </h4>
              <div className="space-y-4 mono text-[10px] uppercase">
-               <div className="bg-slate-900 text-slate-300 p-4 rounded-xl border border-white/5 space-y-2">
-                 <div className="flex justify-between">
-                   <span className="opacity-40">Network</span>
-                   <span className="text-emerald-400">{result.blockchain.network}</span>
-                 </div>
-                 <div className="flex flex-col gap-1">
-                   <span className="opacity-40">TX_HASH</span>
-                   <span className="text-emerald-400 break-all">{result.blockchain.transactionHash}</span>
-                 </div>
-                 <div className="flex justify-between">
-                   <span className="opacity-40">TIMESTAMP</span>
-                   <span>{result.blockchain.timestamp}</span>
-                 </div>
-                 <div className="pt-2 flex justify-between">
-                    <span className="opacity-40">DATA_IPFS</span>
-                    <span className="text-emerald-300 underline cursor-pointer">{result.blockchain.ipfsHash.substr(0, 12)}...</span>
-                 </div>
-               </div>
+                {result.blockchain ? (
+                  <div className="bg-slate-900 text-slate-300 p-4 rounded-xl border border-white/5 space-y-2">
+                    <div className="flex justify-between">
+                      <span className="opacity-40">Network</span>
+                      <span className="text-emerald-400">{result.blockchain.network}</span>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="opacity-40">TX_HASH</span>
+                      <span className="text-emerald-400 break-all">{result.blockchain.transactionHash}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="opacity-40">TIMESTAMP</span>
+                      <span>{result.blockchain.timestamp}</span>
+                    </div>
+                    <div className="pt-2 flex justify-between">
+                       <span className="opacity-40">DATA_IPFS</span>
+                       {result.blockchain.ipfsHash ? (
+                         <span className="text-emerald-300 underline cursor-pointer">
+                           {result.blockchain.ipfsHash.length > 12 
+                             ? `${result.blockchain.ipfsHash.substr(0, 12)}...` 
+                             : result.blockchain.ipfsHash}
+                         </span>
+                       ) : (
+                         <span>N/A</span>
+                       )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-xs opacity-50 italic p-4 text-center border border-dashed border-slate-300 dark:border-slate-800 rounded-xl">
+                    No blockchain verification details available.
+                  </div>
+                )}
              </div>
              <div className="grid grid-cols-1 gap-2 mt-4">
               <button 
@@ -669,65 +927,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({
             </div>
           </div>
 
-          {/* ── News Summary ── */}
-          {result.verification?.summary && (
-            <div className={`lg:col-span-3 p-6 rounded-2xl border ${isDarkMode ? 'bg-[#1E293B] border-[#334155]' : 'bg-white border-[#E2E8F0] shadow-sm'}`}>
-              <h4 className="text-sm font-bold mb-3 flex items-center gap-2 uppercase tracking-wider opacity-60">
-                <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                AI News Summary
-              </h4>
-              <p className={`text-sm leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-                {result.verification.summary}
-              </p>
-            </div>
-          )}
-
-          {/* ── Source Comparison Matrix ── */}
-          {result.verification?.sourceComparison && result.verification.sourceComparison.length > 0 && (
-            <div className={`lg:col-span-3 p-6 rounded-2xl border ${isDarkMode ? 'bg-[#1E293B] border-[#334155]' : 'bg-white border-[#E2E8F0] shadow-sm'}`}>
-              <h4 className="text-sm font-bold mb-4 flex items-center gap-2 uppercase tracking-wider">
-                <svg className="w-4 h-4 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M3 14h18M10 3v18M14 3v18" /></svg>
-                <span className="text-violet-500">Source Comparison Matrix</span>
-                <span className={`ml-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${isDarkMode ? 'bg-violet-500/10 border-violet-500/20 text-violet-400' : 'bg-violet-50 border-violet-200 text-violet-600'}`}>
-                  Gemini Pro Analysis
-                </span>
-              </h4>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className={`border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-                      <th className="py-2 pr-4 font-bold uppercase tracking-wider opacity-50 whitespace-nowrap">Source</th>
-                      <th className="py-2 pr-4 font-bold uppercase tracking-wider opacity-50">Article Title</th>
-                      <th className="py-2 pr-4 font-bold uppercase tracking-wider opacity-50 whitespace-nowrap">Relation</th>
-                      <th className="py-2 font-bold uppercase tracking-wider opacity-50">Key Finding</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.verification.sourceComparison.map((item, idx) => (
-                      <tr key={idx} className={`border-b transition-colors ${isDarkMode ? 'border-slate-700/50 hover:bg-slate-700/20' : 'border-slate-100 hover:bg-slate-50'}`}>
-                        <td className="py-3 pr-4 font-bold whitespace-nowrap">{item.source_name}</td>
-                        <td className={`py-3 pr-4 ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{item.article_title}</td>
-                        <td className="py-3 pr-4">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase whitespace-nowrap ${
-                            item.relationship === 'SUPPORTS'
-                              ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
-                              : item.relationship === 'REFUTES'
-                              ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
-                              : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'
-                          }`}>
-                            {item.relationship === 'SUPPORTS' ? '✓ Supports' : item.relationship === 'REFUTES' ? '✗ Refutes' : '— Unrelated'}
-                          </span>
-                        </td>
-                        <td className={`py-3 italic text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                          "{item.key_finding}"
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
