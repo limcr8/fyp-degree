@@ -268,20 +268,35 @@ def _is_mock_db() -> bool:
     return isinstance(get_db(), MockFirestoreDb)
 
 
+_ARTICLES_DIR = os.path.join("data", "articles")
+
+
 def _save_report_locally(report: AnalyzeResponse) -> None:
     """
-    No-op placeholder — the real persistence path is:
-      1. add_report_to_user_history()  → data/users/{email_hash}.json (authenticated)
-      2. The Firestore users collection  (when real credentials are configured)
-
-    Keeping this function avoids changing the call-site in analyze_text, but
-    the flat data/articles/ store is intentionally removed because it contained
-    generated seed/mock data that should not appear on the Public Portal.
+    Saves a report directly to the top-level articles collection in the DB.
+    This leverages Firestore in production or LocalFileFirestoreDb in dev/offline mode.
 
     Args:
-        report (AnalyzeResponse): The verified report (unused here).
+        report (AnalyzeResponse): The verified report.
     """
-    pass  # persistence is handled exclusively via add_report_to_user_history
+    try:
+        db = get_db()
+        payload = {
+            "article_id": report.id,
+            "text": report.text,
+            "classification": report.classification.model_dump(by_alias=True) if report.classification else None,
+            "explanation": report.explanation.model_dump(by_alias=True) if report.explanation else None,
+            "verification": report.verification.model_dump(by_alias=True) if report.verification else None,
+            "finalAssessment": report.final_assessment.model_dump() if report.final_assessment else None,
+            "blockchain": report.blockchain.model_dump(by_alias=True) if report.blockchain else None,
+            "processingTimeMs": report.processing_time_ms,
+            "platform": report.platform,
+            "language": report.language,
+            "verified_at": report.created_at,
+        }
+        db.collection("articles").document(report.id).set(payload)
+    except Exception:
+        logger.exception("Failed to save report to database collection.")
 
 
 def _load_all_from_user_history() -> list[dict]:
@@ -372,6 +387,11 @@ def _history_item_to_analyze_response(item: dict) -> AnalyzeResponse | None:
         if item.get("verification"):
             try:
                 verification = VerificationDetail.model_validate(item["verification"])
+                if verification.sources:
+                    verification.sources = [
+                        s for s in verification.sources
+                        if not (not s.confirmed and s.name in {"Reuters", "Bloomberg", "CoinDesk", "SEC"})
+                    ]
             except Exception:
                 pass
 
@@ -409,7 +429,7 @@ def _history_item_to_analyze_response(item: dict) -> AnalyzeResponse | None:
 
 def get_report_by_id(report_id: str) -> AnalyzeResponse | None:
     """
-    Retrieves a previously generated report by searching all user history records.
+    Retrieves a previously generated report by searching all user history and local files.
 
     Args:
         report_id (str): The report identifier (article_id).
@@ -417,9 +437,9 @@ def get_report_by_id(report_id: str) -> AnalyzeResponse | None:
     Returns:
         AnalyzeResponse | None: The report model, or None if not found.
     """
-    for item in _load_all_from_user_history():
-        if item.get("article_id") == report_id:
-            return _history_item_to_analyze_response(item)
+    for report in _load_all_reports():
+        if report.id == report_id:
+            return report
     return None
 
 
@@ -455,21 +475,64 @@ def analyze_batch(request: BatchVerifyRequest) -> BatchVerifyResponse:
 
 def _load_all_reports() -> list[AnalyzeResponse]:
     """
-    Loads all verified reports by aggregating every user's history records.
-
-    This replaces the old flat data/articles/ approach. All real verification
-    data lives in data/users/{email_hash}.json → history[].  This function
-    reads those files, converts each history item to an AnalyzeResponse, and
-    de-duplicates by article_id.
+    Loads all verified reports by streaming from Firestore articles collection,
+    with fallback to user histories and local files for backward compatibility/dev mode.
 
     Returns:
-        list[AnalyzeResponse]: All parseable report objects, deduplicated.
+        list[AnalyzeResponse]: Deduplicated list of all report models.
     """
     reports: list[AnalyzeResponse] = []
-    for item in _load_all_from_user_history():
-        report = _history_item_to_analyze_response(item)
-        if report is not None:
-            reports.append(report)
+    seen_ids: set[str] = set()
+
+    # 1. Load from db collection "articles" (either Firestore or LocalFileFirestoreDb)
+    try:
+        db = get_db()
+        for doc in db.collection("articles").stream():
+            try:
+                item = doc.to_dict()
+                if "article_id" not in item:
+                    item["article_id"] = doc.id
+                report = _history_item_to_analyze_response(item)
+                if report is not None and report.id not in seen_ids:
+                    reports.append(report)
+                    seen_ids.add(report.id)
+            except Exception:
+                logger.exception("Failed to parse article document: %s", doc.id)
+    except Exception:
+        logger.exception("Failed to stream articles from DB.")
+
+    # 2. Fallback: only if we are in local file mode (or in-memory mock testing) and no articles found in collection,
+    # or to merge legacy user-history or local file directory elements
+    db = get_db()
+    from app.core.firebase_client import MockFirestoreDb, LocalFileFirestoreDb
+    is_local_or_mock = isinstance(db, (MockFirestoreDb, LocalFileFirestoreDb))
+
+    if is_local_or_mock:
+        # Load from local user histories
+        for item in _load_all_from_user_history():
+            report = _history_item_to_analyze_response(item)
+            if report is not None and report.id not in seen_ids:
+                reports.append(report)
+                seen_ids.add(report.id)
+
+        # Flat data/articles folder direct file read (just in case they weren't saved in LocalFileFirestoreDb yet)
+        if os.path.isdir(_ARTICLES_DIR):
+            for filename in os.listdir(_ARTICLES_DIR):
+                if not filename.endswith(".json"):
+                    continue
+                file_path = os.path.join(_ARTICLES_DIR, filename)
+                try:
+                    with open(file_path, "r", encoding="utf-8") as fh:
+                        item = json.load(fh)
+                    if "article_id" not in item:
+                        item["article_id"] = filename[:-5]
+                    report = _history_item_to_analyze_response(item)
+                    if report is not None and report.id not in seen_ids:
+                        reports.append(report)
+                        seen_ids.add(report.id)
+                except Exception:
+                    pass
+
     return reports
 
 

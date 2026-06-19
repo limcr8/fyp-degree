@@ -58,43 +58,24 @@ def verify_topics(text: str, settings: Settings | None = None) -> list[SourceMat
     active_settings = settings or get_settings()
 
     if not active_settings.google_api_key or not active_settings.google_cse_id:
-        return _fallback_sources()
+        return []
 
     try:
         entities = extract_entities(text)
     except RuntimeError:
         logger.exception("Topic entity extraction failed.")
-        return _fallback_sources()
+        return []
 
     if not entities:
-        return _fallback_sources()
+        return []
 
     try:
         matches = search_authoritative_sources(entities, active_settings)
     except httpx.HTTPError:
         logger.exception("Google CSE request failed.")
-        return _fallback_sources()
+        return []
 
-    core_sources = {
-        "Reuters": SourceMatch(name="Reuters", confirmed=False),
-        "Bloomberg": SourceMatch(name="Bloomberg", confirmed=False),
-        "CoinDesk": SourceMatch(name="CoinDesk", confirmed=False),
-        "SEC": SourceMatch(name="SEC", confirmed=False),
-    }
-
-    dynamic_sources: list[SourceMatch] = []
-
-    for match in matches:
-        if match.name in core_sources:
-            core_sources[match.name] = SourceMatch(
-                name=match.name,
-                confirmed=True,
-                url=match.url,
-            )
-        else:
-            dynamic_sources.append(match)
-
-    return list(core_sources.values()) + dynamic_sources
+    return matches
 
 
 def extract_entities(text: str) -> list[str]:
@@ -236,12 +217,7 @@ def _fallback_sources() -> list[SourceMatch]:
     Returns:
         list[SourceMatch]: Default unconfirmed source matches.
     """
-    return [
-        SourceMatch(name="Reuters", confirmed=False),
-        SourceMatch(name="Bloomberg", confirmed=False),
-        SourceMatch(name="CoinDesk", confirmed=False),
-        SourceMatch(name="SEC", confirmed=False),
-    ]
+    return []
 
 
 def _build_broad_query(entities: list[str]) -> str:
@@ -590,28 +566,8 @@ def verify_topics_with_context(
         logger.warning("All search providers failed; returning fallback sources.")
         return fallback_sources, []
 
-    # Build final source list: core authoritative sources + dynamic matches
-    core_sources = {
-        "Reuters": SourceMatch(name="Reuters", confirmed=False),
-        "Bloomberg": SourceMatch(name="Bloomberg", confirmed=False),
-        "CoinDesk": SourceMatch(name="CoinDesk", confirmed=False),
-        "SEC": SourceMatch(name="SEC", confirmed=False),
-    }
-
-    dynamic_sources: list[SourceMatch] = []
-    deduplicated_matches = _deduplicate_matches(matches)
-
-    for match in deduplicated_matches:
-        if match.name in core_sources:
-            core_sources[match.name] = SourceMatch(
-                name=match.name,
-                confirmed=True,
-                url=match.url,
-            )
-        else:
-            dynamic_sources.append(match)
-
-    final_sources = list(core_sources.values()) + dynamic_sources
+    # Build final source list: only return actual matches found!
+    final_sources = _deduplicate_matches(matches)
     return final_sources, snippets
 
 

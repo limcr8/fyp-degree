@@ -96,13 +96,12 @@ def test_verify_topics_returns_fallback_when_google_is_not_configured() -> None:
     with patch("models.verification.extract_entities", return_value=["Ethereum"]):
         matches = verify_topics("Ethereum price rises.", settings)
 
-    assert matches
-    assert all(match.confirmed is False for match in matches)
+    assert matches == []
 
 
 def test_verify_topics_merges_matches_with_default_sources() -> None:
     """
-    Verifies that verify_topics merges search matches with fallback sources.
+    Verifies that verify_topics returns only actual search matches.
     """
     settings = Settings(google_api_key="test-key", google_cse_id="test-cx")
     mock_matches = [
@@ -112,27 +111,16 @@ def test_verify_topics_merges_matches_with_default_sources() -> None:
 
     with patch("models.verification.extract_entities", return_value=["Bitcoin", "FCC"]), \
          patch("models.verification.search_authoritative_sources", return_value=mock_matches):
-        results = verify_topics("Bitcoin regulation updates.", settings)
+         results = verify_topics("Bitcoin regulation updates.", settings)
 
-    assert len(results) == 5
+    assert len(results) == 2
     
-    # Reuters should be merged and confirmed
+    # Reuters should be present and confirmed
     reuters = next(r for r in results if r.name == "Reuters")
     assert reuters.confirmed is True
     assert reuters.url == "https://reuters.com/1"
 
-    # Bloomberg, CoinDesk, SEC should be present but unconfirmed
-    bloomberg = next(r for r in results if r.name == "Bloomberg")
-    assert bloomberg.confirmed is False
-    assert bloomberg.url is None
-
-    coindesk = next(r for r in results if r.name == "CoinDesk")
-    assert coindesk.confirmed is False
-
-    sec = next(r for r in results if r.name == "SEC")
-    assert sec.confirmed is False
-
-    # FCC should be appended as a dynamic confirmed source
+    # FCC should be present and confirmed
     fcc = next(r for r in results if r.name == "FCC (Official .gov)")
     assert fcc.confirmed is True
     assert fcc.url == "https://fcc.gov/2"

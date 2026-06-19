@@ -295,23 +295,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({
             className={`w-full h-40 p-4 rounded-xl border focus:ring-2 focus:ring-emerald-500 outline-none transition-all ${isDarkMode ? 'bg-[#0F172A] border-[#334155] text-white' : 'bg-[#F8FAFC] border-[#E2E8F0] text-slate-800'}`}
             placeholder="Paste news text, headline, or article URL here..."
           />
-          {/* Auto-detected badges */}
-          {(detectedPlatform || detectedLanguage) && (
-            <div className="absolute bottom-3 left-3 flex gap-1.5">
-              {detectedPlatform && (
-                <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-500 border border-blue-500/25 flex items-center gap-1">
-                  <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5.05 3.636a1 1 0 010 1.414 7 7 0 000 9.9 1 1 0 11-1.414 1.414 9 9 0 010-12.728 1 1 0 011.414 0zm9.9 0a1 1 0 011.414 0 9 9 0 010 12.728 1 1 0 11-1.414-1.414 7 7 0 000-9.9 1 1 0 010-1.414zM7.879 6.464a1 1 0 010 1.414 3 3 0 000 4.243 1 1 0 11-1.415 1.414 5 5 0 010-7.07 1 1 0 011.415 0zm4.242 0a1 1 0 011.415 0 5 5 0 010 7.072 1 1 0 01-1.415-1.415 3 3 0 000-4.242 1 1 0 010-1.415z" clipRule="evenodd" /></svg>
-                  Detected: {detectedPlatform}
-                </span>
-              )}
-              {detectedLanguage && (
-                <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-500 border border-violet-500/25 flex items-center gap-1">
-                  <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" /></svg>
-                  Lang: {detectedLanguage.toUpperCase()}
-                </span>
-              )}
-            </div>
-          )}
           {inputText && (
             <button 
               onClick={() => { setInputText(''); setResult(null); setDetectedPlatform(null); setDetectedLanguage(null); }}
@@ -321,6 +304,24 @@ const VerificationView: React.FC<VerificationViewProps> = ({
             </button>
           )}
         </div>
+
+        {/* Auto-detected badges */}
+        {(detectedPlatform || detectedLanguage) && (
+          <div className="flex gap-1.5 mb-6">
+            {detectedPlatform && (
+              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-500 border border-blue-500/25 flex items-center gap-1">
+                <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5.05 3.636a1 1 0 010 1.414 7 7 0 000 9.9 1 1 0 11-1.414 1.414 9 9 0 010-12.728 1 1 0 011.414 0zm9.9 0a1 1 0 011.414 0 9 9 0 010 12.728 1 1 0 11-1.414-1.414 7 7 0 000-9.9 1 1 0 010-1.414zM7.879 6.464a1 1 0 010 1.414 3 3 0 000 4.243 1 1 0 11-1.415 1.414 5 5 0 010-7.07 1 1 0 011.415 0zm4.242 0a1 1 0 011.415 0 5 5 0 010 7.072 1 1 0 01-1.415-1.415 3 3 0 000-4.242 1 1 0 010-1.415z" clipRule="evenodd" /></svg>
+                Detected: {detectedPlatform}
+              </span>
+            )}
+            {detectedLanguage && (
+              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-500 border border-violet-500/25 flex items-center gap-1">
+                <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" /></svg>
+                Lang: {detectedLanguage.toUpperCase()}
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
            <div className="flex flex-wrap items-center gap-4 text-xs font-semibold">
@@ -455,7 +456,12 @@ const VerificationView: React.FC<VerificationViewProps> = ({
 
              {/* Build a merged list: sources enriched with matching article URLs */}
              {(() => {
-               const sources = (result.verification?.sources || result.sources || []);
+               const rawSources = (result.verification?.sources || result.sources || []);
+               const sources = rawSources.filter(s => {
+                 const nameLower = s.name.toLowerCase();
+                 const isLegacyHardcoded = ["reuters", "bloomberg", "coindesk", "sec"].includes(nameLower);
+                 return !(isLegacyHardcoded && !s.confirmed);
+               });
                const matchingArticles = result.verification?.matchingArticles || [];
 
                // Map source name → matching article (case-insensitive)

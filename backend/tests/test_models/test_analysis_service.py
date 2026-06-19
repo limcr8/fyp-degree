@@ -156,3 +156,89 @@ def test_analyze_text_uses_resolved_article_text() -> None:
         result = analyze_text(request)
 
     assert result.text == "Extracted article text about Ethereum."
+
+
+def test_articles_collection_sync_and_load() -> None:
+    """
+    Verifies that _save_report_locally saves directly to the articles collection
+    in the database and _load_all_reports loads it.
+    """
+    from app.core.firebase_client import get_db
+    from app.schemas.analysis import (
+        AnalyzeResponse,
+        ClassificationDetail,
+        ExplanationDetail,
+        VerificationDetail,
+        FinalAssessment,
+        BlockchainProof,
+    )
+    from models.analysis_service import _save_report_locally, _load_all_reports, get_report_by_id
+
+    db = get_db()
+    assert "articles" not in db._collections
+
+    report = AnalyzeResponse(
+        id="test-article-123",
+        text="A test article for verification sync.",
+        classification=ClassificationDetail(
+            verdict="REAL",
+            confidence=0.95,
+            riskLevel="low",
+            explanation="Test status explanation"
+        ),
+        explanation=ExplanationDetail(
+            shapData=[],
+            summary="Test summary",
+            topFactors=[]
+        ),
+        verification=VerificationDetail(
+            sources=[],
+            verificationScore=0.9,
+            explanation="Test explanation",
+            matchingArticles=[],
+            summary="Test summary",
+            sourceComparison=[]
+        ),
+        finalAssessment=FinalAssessment(
+            score=0.1,
+            label="likely_real",
+            reasoning="Test reasoning"
+        ),
+        blockchain=BlockchainProof(
+            transactionHash="0x123",
+            blockNumber=42,
+            timestamp="2026-06-19T00:00:00Z",
+            ipfsHash="QmTest",
+            network="MockNet"
+        ),
+        processingTimeMs=120,
+        createdAt="2026-06-19T08:00:00Z",
+        platform="website",
+        language="en"
+    )
+
+    _save_report_locally(report)
+
+    # Verify that it exists in the 'articles' collection
+    assert "articles" in db._collections
+    doc_ref = db.collection("articles").document("test-article-123")
+    assert doc_ref.exists
+    data = doc_ref.to_dict()
+    assert data["article_id"] == "test-article-123"
+    assert data["text"] == "A test article for verification sync."
+    assert data["verified_at"] == "2026-06-19T08:00:00Z"
+
+    # Verify loading via _load_all_reports
+    loaded = _load_all_reports()
+    assert len(loaded) >= 1
+    matched = [r for r in loaded if r.id == "test-article-123"]
+    assert len(matched) == 1
+    assert matched[0].text == "A test article for verification sync."
+    assert matched[0].classification.verdict == "REAL"
+    assert matched[0].created_at == "2026-06-19T08:00:00Z"
+
+    # Verify retrieval via get_report_by_id
+    retrieved = get_report_by_id("test-article-123")
+    assert retrieved is not None
+    assert retrieved.text == "A test article for verification sync."
+
