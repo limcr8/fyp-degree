@@ -24,15 +24,64 @@ export interface BlockchainProof {
   network: string;
 }
 
+export interface ClassificationDetail {
+  verdict: string;
+  confidence: number;
+  riskLevel: string;
+  explanation: string;
+}
+
+export interface ExplanationDetail {
+  shapData: ShapExplanation[];
+  summary: string;
+  topFactors: string[];
+}
+
+export interface SourceComparison {
+  source_name: string;
+  article_title: string;
+  relationship: 'SUPPORTS' | 'REFUTES' | 'UNRELATED';
+  key_finding: string;
+}
+
+export interface MatchingArticle {
+  title: string;
+  link: string;
+  source: string;
+  snippet: string;
+}
+
+export interface VerificationDetail {
+  sources: SourceMatch[];
+  verificationScore: number;
+  explanation: string;
+  matchingArticles?: MatchingArticle[];
+  summary?: string;
+  sourceComparison?: SourceComparison[];
+}
+
+export interface FinalAssessment {
+  score: number;
+  label: string;
+  reasoning: string;
+}
+
 export interface VerificationResult {
   id: string;
   text: string;
-  status: VerificationStatus;
-  confidence: number;
-  explanation: string;
-  shapData: ShapExplanation[];
-  sources: SourceMatch[];
+  classification: ClassificationDetail;
+  explanation: ExplanationDetail;
+  verification: VerificationDetail;
+  finalAssessment: FinalAssessment;
   blockchain: BlockchainProof;
+  processingTimeMs: number;
+  status?: string; // Optional support for backward compatibility
+  confidence?: number;
+  explanationStr?: string; // Mapped dynamically
+  sourcesList?: SourceMatch[];
+  createdAt?: string;
+  platform?: string;
+  language?: string;
 }
 
-export type ViewType = 'verify' | 'admin' | 'history' | 'login' | 'signup';
+export type ViewType = 'verify' | 'admin' | 'history' | 'login' | 'signup' | 'portal' | 'profile';

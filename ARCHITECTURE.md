@@ -42,6 +42,7 @@ fake_news_detection/
 |   |   +-- explainer.py       # SHAP explanation generation
 |   |   +-- verification.py    # spaCy NER and Google Search API logic
 |   |   +-- integrity_proof.py # IPFS pinning and EVM testnet anchoring
+|   +-- training/              # RoBERTa fine-tuning CLI
 |   +-- tests/                 # Pytest test suite
 |   |   +-- test_api/
 |   |   +-- test_models/

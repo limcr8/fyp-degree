@@ -17,6 +17,7 @@ The staged backend currently includes:
 * Local deterministic fallback logic when RoBERTa is not configured
 * Local deterministic fallback attribution when SHAP is not configured
 * React frontend integration with the FastAPI `/analyze` endpoint
+* URL ingestion that extracts article text before AI analysis
 
 ## Prerequisites
 
@@ -65,6 +66,21 @@ ROBERTA_MODEL_NAME_OR_PATH=
 This can be either a local fine-tuned checkpoint path or a Hugging Face model ID. If it is empty, the backend keeps running with fallback linguistic logic.
 
 The SHAP service uses the same `ROBERTA_MODEL_NAME_OR_PATH` value. If this value is empty or SHAP/model loading fails, the backend keeps running with fallback token attribution.
+
+To fine-tune a local RoBERTa checkpoint:
+
+```powershell
+python -m training.train_roberta `
+  --dataset data/training/news_dataset.csv `
+  --output-dir checkpoints/roberta-fake-news `
+  --base-model roberta-base
+```
+
+Then set:
+
+```text
+ROBERTA_MODEL_NAME_OR_PATH=./checkpoints/roberta-fake-news
+```
 
 For real Google topic verification, fill these values in `backend/.env`:
 
@@ -161,3 +177,5 @@ Run the backend and frontend in separate terminals:
 2. Terminal 2: `cd frontend`, then `npm run dev`
 
 The backend already allows CORS from `http://localhost:3000` and `http://127.0.0.1:3000`.
+
+For a full API/key setup walkthrough, see `docs/API_SETUP_GUIDE.md`.

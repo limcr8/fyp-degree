@@ -36,8 +36,8 @@ def create_integrity_proof(
 
     try:
         ipfs_hash = pin_report_to_ipfs(report_payload, active_settings)
-        return anchor_ipfs_hash(ipfs_hash, report_hash, active_settings)
-    except (RuntimeError, httpx.HTTPError, ValueError):
+        return anchor_ipfs_hash(report_id, ipfs_hash, report_hash, active_settings)
+    except Exception:
         logger.exception("Integrity proof creation failed.")
         return build_local_proof(report_id, report_hash)
 
@@ -96,7 +96,7 @@ def pin_report_to_ipfs(report_payload: dict[str, Any], settings: Settings) -> st
             "pinataContent": report_payload,
             "pinataMetadata": {"name": f"fake-news-report-{report_payload['id']}"},
         },
-        timeout=20,
+        timeout=5,
     )
     response.raise_for_status()
     payload = response.json()
@@ -109,6 +109,7 @@ def pin_report_to_ipfs(report_payload: dict[str, Any], settings: Settings) -> st
 
 
 def anchor_ipfs_hash(
+    report_id: str,
     ipfs_hash: str,
     report_hash: str,
     settings: Settings,
@@ -117,6 +118,7 @@ def anchor_ipfs_hash(
     Anchors an IPFS CID and report hash on an EVM-compatible testnet.
 
     Args:
+        report_id (str): Unique report identifier.
         ipfs_hash (str): IPFS content identifier.
         report_hash (str): Report SHA-256 digest.
         settings (Settings): Runtime settings with Web3 credentials.
@@ -126,20 +128,56 @@ def anchor_ipfs_hash(
     """
     web3 = _build_web3(settings.web3_provider_url)
     account = web3.eth.account.from_key(settings.web3_private_key)
-    destination = settings.proof_contract_address or account.address
-    data = _encode_anchor_data(ipfs_hash, report_hash)
 
-    transaction = {
-        "to": web3.to_checksum_address(destination),
-        "value": 0,
-        "data": data,
-        "nonce": web3.eth.get_transaction_count(account.address),
-        "gas": 100000,
-        "gasPrice": web3.eth.gas_price,
-        "chainId": settings.web3_chain_id,
-    }
+    if settings.proof_contract_address:
+        # Use Smart Contract anchorReport function
+        contract_abi = [
+            {
+                "inputs": [
+                    {"internalType": "string", "name": "_reportId", "type": "string"},
+                    {"internalType": "string", "name": "_ipfsHash", "type": "string"},
+                    {"internalType": "bytes32", "name": "_reportHash", "type": "bytes32"}
+                ],
+                "name": "anchorReport",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            }
+        ]
+        contract_address = web3.to_checksum_address(settings.proof_contract_address)
+        contract = web3.eth.contract(address=contract_address, abi=contract_abi)
+        
+        # Clean hex and convert report hash to bytes32 representation
+        clean_hash = report_hash.replace("0x", "")
+        report_hash_bytes = bytes.fromhex(clean_hash.ljust(64, "0")[:64])
+
+        tx_build = contract.functions.anchorReport(
+            report_id,
+            ipfs_hash,
+            report_hash_bytes
+        ).build_transaction({
+            "from": account.address,
+            "nonce": web3.eth.get_transaction_count(account.address),
+            "gas": 150000,
+            "gasPrice": web3.eth.gas_price,
+            "chainId": settings.web3_chain_id,
+        })
+    else:
+        # Fallback to raw data memo transfer
+        destination = account.address
+        data = _encode_anchor_data(ipfs_hash, report_hash)
+        tx_build = {
+            "to": web3.to_checksum_address(destination),
+            "value": 0,
+            "data": data,
+            "nonce": web3.eth.get_transaction_count(account.address),
+            "gas": 100000,
+            "gasPrice": web3.eth.gas_price,
+            "chainId": settings.web3_chain_id,
+        }
+
     signed_transaction = web3.eth.account.sign_transaction(
-        transaction,
+        tx_build,
         settings.web3_private_key,
     )
     transaction_hash = web3.eth.send_raw_transaction(

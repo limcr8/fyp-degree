@@ -23,6 +23,28 @@ def test_extract_token_attributions_from_shap_like_values() -> None:
     assert explanations[1].weight == -0.4
 
 
+def test_extract_token_attributions_flattens_nested_batch_tokens() -> None:
+    """
+    Verifies nested SHAP token batches do not render as one giant string.
+    """
+    shap_values = SimpleNamespace(
+        data=[[["Trump ", "walks ", "out ", "interview ", "claims"]]],
+        values=[[[[0.1, -0.2], [0.7, 0.1], [0.05, 0.02], [-0.5, 0.1], [0.3, -0.1]]]],
+    )
+
+    explanations = _extract_token_attributions(shap_values, max_items=5)
+
+    assert [item.word for item in explanations] == [
+        "walks",
+        "interview",
+        "claims",
+        "Trump",
+        "out",
+    ]
+    assert all("[" not in item.word for item in explanations)
+    assert all(isinstance(item.weight, float) for item in explanations)
+
+
 def test_generate_shap_explanations_uses_mocked_explainer() -> None:
     """
     Verifies SHAP explanation flow without loading a real model.
@@ -49,4 +71,7 @@ def test_generate_shap_explanations_fails_without_model_path() -> None:
     Verifies that missing RoBERTa configuration is explicit for SHAP.
     """
     with pytest.raises(RuntimeError, match="ROBERTA_MODEL_NAME_OR_PATH"):
-        generate_shap_explanations("Bitcoin update.", settings=Settings())
+        generate_shap_explanations(
+            "Bitcoin update.",
+            settings=Settings(roberta_model_name_or_path=""),
+        )

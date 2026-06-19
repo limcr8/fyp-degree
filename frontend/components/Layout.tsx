@@ -1,6 +1,7 @@
-
 import React from 'react';
 import { ViewType } from '../types';
+import { User } from 'firebase/auth';
+import { UserProfileResponse } from '../services/apiService';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -8,9 +9,21 @@ interface LayoutProps {
   setView: (view: ViewType) => void;
   isDarkMode: boolean;
   toggleTheme: () => void;
+  user: User | null;
+  handleLogout: () => void;
+  profile?: UserProfileResponse | null;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, isDarkMode, toggleTheme }) => {
+const Layout: React.FC<LayoutProps> = ({ 
+  children, 
+  activeView, 
+  setView, 
+  isDarkMode, 
+  toggleTheme,
+  user,
+  handleLogout,
+  profile
+}) => {
   const isAuthPage = activeView === 'login' || activeView === 'signup';
 
   return (
@@ -32,17 +45,27 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, isDarkMo
               Verify
             </button>
             <button 
+              onClick={() => setView('portal')}
+              className={`hover:text-emerald-500 transition-colors ${activeView === 'portal' ? 'text-emerald-500' : ''}`}
+            >
+              Portal
+            </button>
+            <button 
               onClick={() => setView('history')}
               className={`hover:text-emerald-500 transition-colors ${activeView === 'history' ? 'text-emerald-500' : ''}`}
             >
               History
             </button>
-            <button 
-              onClick={() => setView('admin')}
-              className={`hover:text-emerald-500 transition-colors ${activeView === 'admin' ? 'text-emerald-500' : ''}`}
-            >
-              Dashboard
-            </button>
+            {profile?.role === 'admin' && (
+              <button 
+                onClick={() => setView('admin')}
+                className={`hover:text-emerald-500 transition-colors ${activeView === 'admin' ? 'text-emerald-500' : ''}`}
+              >
+                Dashboard
+              </button>
+            )}
+
+
           </nav>
 
           <div className="flex items-center gap-3">
@@ -57,7 +80,32 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, isDarkMo
               )}
             </button>
             
-            {!isAuthPage ? (
+            {user ? (
+              <div className="flex items-center gap-3 ml-2">
+                <span className={`hidden sm:block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                  Hi, {profile?.username || user.displayName || user.email?.split('@')[0]}
+                </span>
+                <button 
+                  onClick={() => setView('profile')}
+                  className={`p-1.5 rounded-lg transition-colors ${
+                    activeView === 'profile' 
+                      ? 'text-emerald-500 bg-emerald-500/10' 
+                      : `${isDarkMode ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`
+                  }`}
+                  title="Profile Settings"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </button>
+                <button 
+                  onClick={handleLogout}
+                  className="bg-[#EF4444] text-white text-xs font-bold px-4 py-2 rounded-xl hover:bg-red-600 transition-all"
+                >
+                  Log out
+                </button>
+              </div>
+            ) : !isAuthPage ? (
               <div className="flex items-center gap-3 ml-2">
                 <button 
                   onClick={() => setView('login')}

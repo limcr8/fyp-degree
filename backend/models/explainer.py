@@ -9,7 +9,7 @@ from models.linguistic import _load_linguistic_assets
 def generate_shap_explanations(
     text: str,
     settings: Settings | None = None,
-    max_items: int = 8,
+    max_items: int = 5,
 ) -> list[ShapExplanation]:
     """
     Generates SHAP token attributions for the configured RoBERTa model.
@@ -42,10 +42,11 @@ def generate_shap_explanations(
 
 def _extract_token_attributions(
     shap_values: Any,
-    max_items: int = 8,
+    max_items: int = 5,
 ) -> list[ShapExplanation]:
     """
-    Converts SHAP output into frontend attribution rows.
+    Converts SHAP output into frontend attribution rows, merging subwords
+    and filtering out punctuation tokens.
 
     Args:
         shap_values (Any): SHAP explanation object.
@@ -56,18 +57,65 @@ def _extract_token_attributions(
     """
     tokens = _first_sample(getattr(shap_values, "data", []))
     values = _first_sample(getattr(shap_values, "values", []))
-    explanations: list[ShapExplanation] = []
+    
+    # Check if the tokens contain spaces or BPE space markers, meaning they need merging.
+    # (Unit tests or clean word lists won't have any leading/trailing spaces or BPE markers).
+    space_markers = ["Ġ", "Ċ", " ", "\u2581", "\n"]
+    has_bpe_marker = any(
+        any(m in str(token) for m in space_markers)
+        for token in tokens
+    )
+    
+    merged_explanations: list[ShapExplanation] = []
+    prev_raw_token: str | None = None
 
     for token, token_values in zip(tokens, values):
-        word = _clean_token(str(token))
-        if not word:
-            continue
-        explanations.append(
-            ShapExplanation(word=word, weight=_token_score(token_values))
-        )
+        raw_token = str(token)
+        score = _token_score(token_values)
 
-    explanations.sort(key=lambda item: abs(item.weight), reverse=True)
-    return explanations[:max_items]
+        # A token starts a new word if BPE is inactive, if it is the first token,
+        # if the token starts with a space marker, or if the previous token ended with one.
+        if has_bpe_marker:
+            is_new_word = (
+                not merged_explanations or
+                raw_token.startswith("Ġ") or
+                raw_token.startswith(" ") or
+                raw_token.startswith("\n") or
+                raw_token.startswith("\u2581") or
+                (prev_raw_token is not None and (
+                    prev_raw_token.endswith("Ġ") or
+                    prev_raw_token.endswith(" ") or
+                    prev_raw_token.endswith("\n") or
+                    prev_raw_token.endswith("\u2581")
+                ))
+            )
+        else:
+            is_new_word = True
+
+        cleaned = _clean_token(raw_token)
+        if not cleaned:
+            prev_raw_token = raw_token
+            continue
+
+        # Ignore tokens with no alphanumeric characters (punctuation, lines, symbols)
+        if not any(c.isalnum() for c in cleaned):
+            prev_raw_token = raw_token
+            continue
+
+        if is_new_word:
+            merged_explanations.append(ShapExplanation(word=cleaned, weight=score))
+        else:
+            # Merge subword continuation with the preceding word and accumulate weight
+            prev = merged_explanations[-1]
+            merged_explanations[-1] = ShapExplanation(
+                word=prev.word + cleaned,
+                weight=round(prev.weight + score, 4)
+            )
+        
+        prev_raw_token = raw_token
+
+    merged_explanations.sort(key=lambda item: abs(item.weight), reverse=True)
+    return merged_explanations[:max_items]
 
 
 def _first_sample(value: Any) -> list[Any]:
@@ -80,15 +128,35 @@ def _first_sample(value: Any) -> list[Any]:
     Returns:
         list[Any]: First sample sequence.
     """
-    if hasattr(value, "tolist"):
-        value = value.tolist()
-    if isinstance(value, tuple):
-        value = list(value)
-    if isinstance(value, list) and value and isinstance(value[0], (list, tuple)):
-        return list(value[0])
+    value = _to_python_list(value)
+
+    while (
+        isinstance(value, list)
+        and len(value) == 1
+        and isinstance(_to_python_list(value[0]), list)
+    ):
+        value = _to_python_list(value[0])
+
     if isinstance(value, list):
         return value
     return []
+
+
+def _to_python_list(value: Any) -> Any:
+    """
+    Converts array-like values into Python lists where possible.
+
+    Args:
+        value (Any): Array-like value.
+
+    Returns:
+        Any: Converted value.
+    """
+    if hasattr(value, "tolist"):
+        return value.tolist()
+    if isinstance(value, tuple):
+        return list(value)
+    return value
 
 
 def _token_score(token_values: Any) -> float:
