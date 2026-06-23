@@ -71,6 +71,7 @@ export interface FinalAssessment {
 export interface VerificationResult {
   id: string;
   text: string;
+  title?: string;
   classification: ClassificationDetail;
   explanation: ExplanationDetail;
   verification: VerificationDetail;
@@ -86,4 +87,4 @@ export interface VerificationResult {
   language?: string;
 }
 
-export type ViewType = 'verify' | 'admin' | 'history' | 'login' | 'signup' | 'portal' | 'profile';
+export type ViewType = 'verify' | 'admin' | 'admin-users' | 'admin-feedback' | 'history' | 'login' | 'signup' | 'portal' | 'profile';

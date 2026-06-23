@@ -261,6 +261,17 @@ def analyze_text(request: AnalyzeRequest, access_token: str | None = None) -> An
         reasoning=reasoning,
     )
 
+    # Sync classification.verdict with the authoritative final verdict so the
+    # value stored in Firestore (articles + user history) matches what the UI
+    # displays. finalAssessment.label is the combined authoritative verdict;
+    # without this override Firestore keeps the raw RoBERTa/Gemini verdict
+    # (e.g. "UNCERTAIN") while Portal/History show the final verdict (e.g.
+    # "FAKE"), causing Firebase and the UI to disagree.
+    if final_assessment and final_assessment.label:
+        classification_detail = classification_detail.model_copy(
+            update={"verdict": final_assessment.label.upper()}
+        )
+
     # Stage 3 payload logic (serialize full response before blockchain anchoring)
     report_payload = {
         "id": report_id,
@@ -288,9 +299,13 @@ def analyze_text(request: AnalyzeRequest, access_token: str | None = None) -> An
         except Exception:
             pass
 
+    # Extract a clean headline from the article text for display purposes.
+    article_title = _extract_headline(analysis_text, request.text)
+
     response = AnalyzeResponse(
         id=report_id,
         text=analysis_text,
+        title=article_title,
         classification=classification_detail,
         explanation=explanation_detail,
         verification=verification_detail,
@@ -303,12 +318,12 @@ def analyze_text(request: AnalyzeRequest, access_token: str | None = None) -> An
     )
     _save_report_locally(response)
 
-    if access_token:
-        try:
-            from models.auth_service import add_report_to_user_history
-            add_report_to_user_history(access_token, response)
-        except Exception:
-            logger.exception("Failed to append report to user history.")
+    # NOTE: User history (users/{uid}/history) is written by the frontend via
+    # saveVerificationResult(), keyed by the Firebase Auth UID. The previous
+    # backend write to users/{email_hash}/history was removed because it used
+    # sha256(email) as the document ID, which created a duplicate user row
+    # distinct from the Firebase Auth UID and caused the users/ collection to
+    # contain two documents per human user.
 
     return response
 
@@ -555,38 +570,6 @@ def _load_all_reports() -> list[AnalyzeResponse]:
     except Exception:
         logger.exception("Failed to stream articles from DB.")
 
-    # 2. Fallback: only if we are in local file mode (or in-memory mock testing) and no articles found in collection,
-    # or to merge legacy user-history or local file directory elements
-    db = get_db()
-    from app.core.firebase_client import MockFirestoreDb, LocalFileFirestoreDb
-    is_local_or_mock = isinstance(db, (MockFirestoreDb, LocalFileFirestoreDb))
-
-    if is_local_or_mock:
-        # Load from local user histories
-        for item in _load_all_from_user_history():
-            report = _history_item_to_analyze_response(item)
-            if report is not None and report.id not in seen_ids:
-                reports.append(report)
-                seen_ids.add(report.id)
-
-        # Flat data/articles folder direct file read (just in case they weren't saved in LocalFileFirestoreDb yet)
-        if os.path.isdir(_ARTICLES_DIR):
-            for filename in os.listdir(_ARTICLES_DIR):
-                if not filename.endswith(".json"):
-                    continue
-                file_path = os.path.join(_ARTICLES_DIR, filename)
-                try:
-                    with open(file_path, "r", encoding="utf-8") as fh:
-                        item = json.load(fh)
-                    if "article_id" not in item:
-                        item["article_id"] = filename[:-5]
-                    report = _history_item_to_analyze_response(item)
-                    if report is not None and report.id not in seen_ids:
-                        reports.append(report)
-                        seen_ids.add(report.id)
-                except Exception:
-                    pass
-
     return reports
 
 
@@ -626,10 +609,27 @@ def search_reports(
 
     filtered = []
     for report in reports:
-        # Keyword filtering
+        # Keyword filtering — use word-boundary matching to avoid false
+        # positives (e.g. 'SEC' should NOT match 'security').
         if q:
             keyword = q.lower().strip()
-            if keyword not in report.text.lower():
+            text_lower = report.text.lower()
+            # Split into individual words; ALL must be present as whole words
+            words = [w for w in keyword.split() if w]
+            matched = True
+            for w in words:
+                try:
+                    import re as _re
+                    # Word-boundary match: the keyword must be a standalone word
+                    if not _re.search(r'\b' + _re.escape(w) + r'\b', text_lower):
+                        matched = False
+                        break
+                except Exception:
+                    # Fallback to substring match if regex fails
+                    if w not in text_lower:
+                        matched = False
+                        break
+            if not matched:
                 continue
 
         # Language filtering
@@ -685,7 +685,13 @@ def search_reports(
         SearchResultItem(
             article_id=rep.id,
             text=rep.text,
-            classification=rep.classification,
+            title=getattr(rep, "title", None) or _extract_headline(rep.text),
+            classification=ClassificationDetail(
+                verdict=_resolve_displayed_verdict(rep),
+                confidence=rep.final_assessment.score if (rep.final_assessment and rep.final_assessment.score is not None) else (rep.classification.confidence if rep.classification else 0.0),
+                risk_level=rep.classification.risk_level if rep.classification else "medium",
+                explanation=rep.classification.explanation if rep.classification else "",
+            ) if rep.classification else rep.classification,
             created_at=rep.created_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             platform=rep.platform or "twitter",
             language=rep.language or "en",
@@ -702,6 +708,49 @@ def search_reports(
         page=page,
         per_page=limit,
     )
+
+
+def _extract_headline(article_text: str, original_input: str = "") -> str:
+    """
+    Extracts a clean headline/title from scraped article text.
+
+    Args:
+        article_text (str): The full scraped article text.
+        original_input (str): The original user input (may be a URL).
+
+    Returns:
+        str: A clean headline suitable for display.
+    """
+    if not article_text:
+        return "Untitled Article"
+    lines = [ln.strip() for ln in article_text.split("\n") if ln.strip()]
+    # The first non-empty line is usually the headline/title
+    headline = lines[0] if lines else article_text.strip()
+    # Truncate to a reasonable title length
+    if len(headline) > 100:
+        headline = headline[:97] + "..."
+    return headline
+
+
+def _resolve_displayed_verdict(report) -> str:
+    """
+    Resolves the single normalized verdict to display for a report.
+
+    Prefers final_assessment.label (the authoritative final verdict) and
+    falls back to classification.verdict. Normalizes to uppercase with spaces.
+    This ensures trending, search, and UI badges all agree on the verdict.
+
+    Args:
+        report: An AnalyzeResponse / report object.
+
+    Returns:
+        str: Normalized verdict (e.g. 'LIKELY REAL', 'LIKELY FAKE', 'UNCERTAIN').
+    """
+    if report.final_assessment and report.final_assessment.label:
+        return report.final_assessment.label.upper().replace("_", " ")
+    if report.classification and report.classification.verdict:
+        return report.classification.verdict.upper().replace("_", " ")
+    return "UNCERTAIN"
 
 
 def get_trending_topics(
@@ -726,49 +775,40 @@ def get_trending_topics(
         target_lang = language.lower().strip()
         reports = [r for r in reports if (r.language or "en").lower().strip() == target_lang]
 
-    CRYPTO_TOPICS = ["Bitcoin", "Ethereum", "SEC", "Binance", "FTX", "Solana", "Ripple", "Airdrop", "Tether"]
+    # Only use curated crypto keywords for trending topics.
+    # NER entities are too noisy (random names) and produce unrelated results
+    # when clicked. Sticking to well-known crypto terms keeps trending relevant.
+    CRYPTO_TOPICS = [
+        "Bitcoin", "Ethereum", "SEC", "Binance", "FTX",
+        "Solana", "Ripple", "Tether", "Coinbase", "Crypto",
+    ]
     topic_map = {}
 
     for report in reports:
         detected_topics = set()
         lowered_text = report.text.lower()
 
-        # Custom crypto keywords
+        # Only curated crypto keywords
         for crypto in CRYPTO_TOPICS:
             if crypto.lower() in lowered_text:
                 detected_topics.add(crypto)
 
-        # SpaCy NER entities
-        try:
-            spacy_ents = extract_entities(report.text)
-            for ent in spacy_ents:
-                ent_norm = ent.strip()
-                if len(ent_norm) > 2:
-                    matched_crypto = None
-                    for crypto in CRYPTO_TOPICS:
-                        if crypto.lower() == ent_norm.lower():
-                            matched_crypto = crypto
-                            break
-                    if matched_crypto:
-                        detected_topics.add(matched_crypto)
-                    else:
-                        detected_topics.add(ent_norm)
-        except Exception:
-            pass
-
-        if not detected_topics:
-            detected_topics.add("General News")
-
         search_item = SearchResultItem(
             article_id=report.id,
             text=report.text,
+            title=getattr(report, "title", None) or _extract_headline(report.text),
             classification=report.classification,
             created_at=report.created_at or report.blockchain.timestamp or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             platform=report.platform or "twitter",
             language=report.language or "en",
         )
 
-        is_fake = (report.classification.verdict.upper() == "FAKE" or "fake" in report.final_assessment.label.lower())
+        # Use a consistent verdict resolution that matches what the UI displays.
+        # The card badge shows classification.verdict, but final_assessment.label
+        # is the authoritative final verdict. Resolve to a single normalized value
+        # so trending fake counts always match the visible verdict badges.
+        displayed_verdict = _resolve_displayed_verdict(report)
+        is_fake = "FAKE" in displayed_verdict
 
         for topic in detected_topics:
             topic_key = topic.lower().strip()
@@ -799,34 +839,8 @@ def get_trending_topics(
 
     trending_items.sort(key=lambda x: (x.mentions, x.fake_count), reverse=True)
 
-    if not trending_items:
-        trending_items = [
-            TrendingTopicItem(
-                topic="Bitcoin ETF Approval",
-                mentions=145,
-                fake_count=23,
-                articles=[]
-            ),
-            TrendingTopicItem(
-                topic="Binance Regulatory Probe",
-                mentions=98,
-                fake_count=45,
-                articles=[]
-            ),
-            TrendingTopicItem(
-                topic="Fake MetaMask Airdrop Scam",
-                mentions=87,
-                fake_count=87,
-                articles=[]
-            ),
-            TrendingTopicItem(
-                topic="SEC Ripple Decision",
-                mentions=64,
-                fake_count=12,
-                articles=[]
-            )
-        ]
-
+    # Return real data only (no fake placeholders). An empty list hides the
+    # trending bar in the frontend until real articles create real trends.
     return TrendingResponse(trending=trending_items[:limit])
 
 

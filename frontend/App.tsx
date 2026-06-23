@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Layout from './components/Layout';
 import VerificationView from './components/VerificationView';
 import AdminView from './components/AdminView';
@@ -26,6 +26,12 @@ const App: React.FC = () => {
   const [inputText, setInputText] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
+
+  // Sync activeView ref to prevent stale closures in Firebase callbacks
+  const activeViewRef = useRef(activeView);
+  useEffect(() => {
+    activeViewRef.current = activeView;
+  }, [activeView]);
 
   const handleLogout = async () => {
     try {
@@ -74,9 +80,10 @@ const App: React.FC = () => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         const token = localStorage.getItem('access_token');
+        const currentView = activeViewRef.current;
         // Only force-logout if we're NOT on an auth page and there's no backend token.
         // On page refresh, localStorage is synchronously available, so this is safe.
-        if (!token && activeView !== 'login' && activeView !== 'signup') {
+        if (!token && currentView !== 'login' && currentView !== 'signup') {
           console.warn("Firebase session active but no backend token. Forcing logout to re-sync.");
           try { await logoutUser(); } catch (_) {}
           setUser(null);
@@ -120,6 +127,13 @@ const App: React.FC = () => {
     }
   }, [user, activeView]);
 
+  // Admins are restricted to admin-only views; redirect away from hidden pages
+  useEffect(() => {
+    if (profile?.role === 'admin' && ['verify', 'portal', 'history'].includes(activeView)) {
+      setActiveView('admin');
+    }
+  }, [profile, activeView]);
+
   // Load history from backend when navigating to history view
   useEffect(() => {
     if (activeView === 'history' && user) {
@@ -129,8 +143,8 @@ const App: React.FC = () => {
         try {
           // 1. Try loading directly from client-side Firestore subcollection
           try {
-            console.log("Attempting to load history from Firestore subcollection for user:", user.uid);
-            const firestoreHistory = await getVerificationHistory(user.uid);
+            console.log("Attempting to load history from Firestore subcollection for user:", user.email);
+            const firestoreHistory = await getVerificationHistory(user.email!);
             if (firestoreHistory && firestoreHistory.length > 0) {
               setHistoryResults(firestoreHistory);
               return;
@@ -200,15 +214,19 @@ const App: React.FC = () => {
           />
         );
       case 'admin':
-        return <AdminView isDarkMode={isDarkMode} profile={profile} />;
+        return <AdminView isDarkMode={isDarkMode} profile={profile} activePage="dashboard" />;
+      case 'admin-users':
+        return <AdminView isDarkMode={isDarkMode} profile={profile} activePage="users" />;
+      case 'admin-feedback':
+        return <AdminView isDarkMode={isDarkMode} profile={profile} activePage="feedback" />;
       case 'profile':
-        return <ProfileView isDarkMode={isDarkMode} profile={profile} setProfile={setProfile} />;
+        return <ProfileView isDarkMode={isDarkMode} profile={profile} setProfile={setProfile} setUser={setUser} />;
       case 'portal':
         return <PortalView isDarkMode={isDarkMode} />;
       case 'login':
         return <LoginView setView={setActiveView} isDarkMode={isDarkMode} />;
       case 'signup':
-        return <SignupView setView={setActiveView} isDarkMode={isDarkMode} />;
+        return <SignupView setView={setActiveView} isDarkMode={isDarkMode} setUser={setUser} />;
       case 'history':
         if (!user) {
           return (
@@ -260,10 +278,6 @@ const App: React.FC = () => {
                     if (label.includes('FAKE')) return 'bg-rose-500/10 text-rose-500';
                     return 'bg-amber-500/10 text-amber-500';
                   };
-                  const getConfidenceText = () => {
-                    const conf = item.finalAssessment ? item.finalAssessment.score : (item.confidence !== undefined ? item.confidence : 0.5);
-                    return `${(conf * 100).toFixed(0)}%`;
-                  };
                   return (
                     <div 
                       key={idx} 
@@ -275,7 +289,7 @@ const App: React.FC = () => {
                     >
                       <div className="flex justify-between items-start mb-4">
                         <span className={`px-2.5 py-1 text-[10px] font-black rounded uppercase tracking-wider ${getLabelClass()}`}>
-                          {getLabel()} ({getConfidenceText()})
+                          {getLabel()}
                         </span>
                         <span className="text-[10px] opacity-40">
                           {item.timestamp ? new Date(item.timestamp).toLocaleDateString() : 'N/A'}

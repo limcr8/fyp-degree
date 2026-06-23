@@ -197,23 +197,15 @@ const LoginView: React.FC<LoginViewProps> = ({ setView, isDarkMode }) => {
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-4">
+        <div className="mt-6 flex justify-center">
           <button 
             type="button"
             disabled={loading}
             onClick={handleGoogleLogin}
-            className={`flex items-center justify-center gap-2 py-2.5 rounded-xl border font-medium text-sm transition-all ${isDarkMode ? 'border-[#334155] hover:bg-[#334155]' : 'border-[#E2E8F0] hover:bg-slate-50'} disabled:opacity-50`}
+            className={`flex items-center justify-center gap-2 py-2.5 px-8 rounded-xl border font-medium text-sm transition-all ${isDarkMode ? 'border-[#334155] hover:bg-[#334155]' : 'border-[#E2E8F0] hover:bg-slate-50'} disabled:opacity-50`}
           >
             <img src="https://www.google.com/favicon.ico" className="w-4 h-4" alt="Google" />
             Google
-          </button>
-          <button 
-            type="button"
-            disabled={loading}
-            className={`flex items-center justify-center gap-2 py-2.5 rounded-xl border font-medium text-sm transition-all ${isDarkMode ? 'border-[#334155] hover:bg-[#334155]' : 'border-[#E2E8F0] hover:bg-slate-50'} disabled:opacity-50`}
-          >
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.627 0-12 5.373-12 12s5.373 12 12 12 12-5.373 12-12-5.373-12-12-12zm3 8h-1.35c-.538 0-.65.221-.65.778v1.222h2l-.209 2h-1.791v7h-3v-7h-2v-2h2v-2.308c0-1.769.931-2.692 3.029-2.692h1.971v3z"/></svg>
-            MetaMask
           </button>
         </div>
 

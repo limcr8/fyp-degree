@@ -170,6 +170,7 @@ class AnalyzeResponse(BaseModel):
 
     id: str
     text: str
+    title: str | None = Field(default=None, alias="title")
     classification: ClassificationDetail
     explanation: ExplanationDetail
     verification: VerificationDetail
@@ -233,6 +234,7 @@ class SearchResultItem(BaseModel):
 
     article_id: str = Field(alias="article_id")
     text: str
+    title: str | None = Field(default=None, alias="title")
     classification: ClassificationDetail
     created_at: str = Field(alias="created_at")
     platform: str

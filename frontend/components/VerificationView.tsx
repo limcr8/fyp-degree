@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { VerificationResult, VerificationStatus } from '../types';
 import { verifyNewsContent, submitUserFeedback, downloadArticlePdf } from '../services/apiService';
 import { User } from 'firebase/auth';
-import { saveVerificationResult } from '../services/firebase';
+import { saveVerificationResult, saveFeedback } from '../services/firebase';
 // @ts-ignore
 import { franc } from 'franc-min';
 
@@ -30,6 +30,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({
   const [showDisputeModal, setShowDisputeModal] = useState(false);
   const [showSourceDetails, setShowSourceDetails] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
+  const [shareStatus, setShareStatus] = useState<'idle' | 'copied' | 'shared'>('idle');
   const [selectedLanguage, setSelectedLanguage] = useState('auto');
   const [selectedPlatform, setSelectedPlatform] = useState('auto');
   const [detectedLanguage, setDetectedLanguage] = useState<string | null>(null);
@@ -145,6 +146,31 @@ const VerificationView: React.FC<VerificationViewProps> = ({
       setPdfDownloading(false);
     }
   };
+
+  const handleShare = async () => {
+    if (!result) return;
+    const label = (result.finalAssessment?.label || result.status || 'UNCERTAIN').toUpperCase().replace('_', ' ');
+    const score = result.finalAssessment ? Math.round(result.finalAssessment.score * 100) : 0;
+    const txHash = result.blockchain?.transactionHash || 'N/A';
+    const explorerUrl = result.blockchain?.transactionHash && txHash !== 'N/A'
+      ? `\nVerify on-chain: https://sepolia.etherscan.io/tx/${txHash}`
+      : '';
+    const shareText = `*Fake News Detection Result*\n\n*Verdict:* ${label}\n*Risk Score:* ${score}%\n*Blockchain Proof:* ${txHash}${explorerUrl}\n\nVerified with Explainable AI + Blockchain Anchoring.`;
+
+    try {
+      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+      window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+      setShareStatus('shared');
+    } catch {
+      try {
+        await navigator.clipboard.writeText(shareText);
+        setShareStatus('copied');
+      } catch {
+        setShareStatus('idle');
+      }
+    }
+    setTimeout(() => setShareStatus('idle'), 3000);
+  };
   const [feedbackType, setFeedbackType] = useState('incorrect_classification');
   const [feedbackMessage, setFeedbackMessage] = useState('');
   const [feedbackEmail, setFeedbackEmail] = useState('');
@@ -166,13 +192,16 @@ const VerificationView: React.FC<VerificationViewProps> = ({
     setFeedbackSuccess(null);
 
     const articleId = result.id || (result as any).article_id || 'unknown';
+    const verdict = (result.finalAssessment?.label || result.status || 'UNCERTAIN').toString();
 
     try {
-      await submitUserFeedback({
+      await saveFeedback({
         article_id: articleId,
         feedback_type: feedbackType,
         message: feedbackMessage,
-        user_email: feedbackEmail || 'anonymous@example.com'
+        user_email: feedbackEmail || 'anonymous@example.com',
+        verdict: verdict,
+        user_id: user?.uid || null,
       });
       setFeedbackSuccess("Your dispute feedback has been submitted successfully. Thank you!");
       setFeedbackMessage('');
@@ -188,57 +217,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({
     }
   };
 
-  const sampleData: any = {
-    id: 'sample-9921',
-    text: 'BREAKING: NASA scientists discover massive structure on the dark side of the moon that appears to be of artificial origin.',
-    status: VerificationStatus.FAKE,
-    confidence: 0.94,
-    explanation: "The content exhibits several markers of sensationalized misinformation. There is no corroborating evidence from official NASA channels or peer-reviewed journals. The linguistic patterns involve high-arousal language and lack specific astronomical coordinates or technical citations typical of such a discovery.",
-    shapData: [
-      { word: 'BREAKING', weight: 0.45 },
-      { word: 'massive structure', weight: 0.38 },
-      { word: 'dark side', weight: 0.22 },
-      { word: 'artificial', weight: 0.31 },
-      { word: 'NASA', weight: -0.15 }
-    ],
-    verification: {
-      sources: [
-        { name: 'NASA Official', confirmed: false },
-        { name: 'AP News', confirmed: false },
-        { name: 'Space.com', confirmed: false },
-        { name: 'Nature', confirmed: false }
-      ],
-      verificationScore: 0.0,
-      explanation: "0% of claims verified in authoritative sources",
-      matchingArticles: [
-        {
-          title: "AP Fact Check: Viral claims of lunar monoliths are false",
-          link: "https://apnews.com/article/fact-check-moon-monoliths",
-          source: "AP News",
-          snippet: "Associated Press fact checkers confirmed that recent images showing what users claim are artificial monoliths are edited photos of natural craters."
-        },
-        {
-          title: "NASA Clarifies: No Artificial Monoliths on Moon Surface",
-          link: "https://www.nasa.gov/news/lunar-surface-unverified-reports",
-          source: "NASA Official",
-          snippet: "Official NASA statement confirms that high-resolution scans of the lunar surface show only volcanic features and impact craters."
-        }
-      ]
-    },
-    blockchain: {
-      transactionHash: '0x9d2b8347e12f45c9a721b6d54e098a1c',
-      blockNumber: 19445210,
-      timestamp: '2024-05-20 14:32:11 UTC',
-      ipfsHash: 'QmXoypizj2Wke9u6W694r3A5f68W29r3K',
-      network: 'Mainnet Relay'
-    }
-  };
-
-  const handleLoadSample = () => {
-    setInputText(sampleData.text);
-    setResult(sampleData);
-  };
-
   const handleVerify = async () => {
     if (!inputText.trim()) return;
     setIsVerifying(true);
@@ -248,8 +226,8 @@ const VerificationView: React.FC<VerificationViewProps> = ({
       setResult(apiResult);
 
       // Save to Firestore history if user is logged in
-      if (user) {
-        await saveVerificationResult(user.uid, apiResult);
+      if (user && user.email) {
+        await saveVerificationResult(user.email, apiResult);
       }
     } catch (err) {
       console.error("Verification failed:", err);
@@ -277,17 +255,9 @@ const VerificationView: React.FC<VerificationViewProps> = ({
     <div className="animate-fade-in space-y-8">
       {/* Input Section */}
       <section className={`p-8 rounded-2xl border ${isDarkMode ? 'bg-[#1E293B] border-[#334155]' : 'bg-white border-[#E2E8F0] shadow-sm'}`}>
-        <div className="flex justify-between items-start mb-4">
-          <div>
-            <h2 className="text-2xl font-bold mb-1">Verify News Accuracy</h2>
-            <p className={`${isDarkMode ? 'text-[#94A3B8]' : 'text-slate-500'} text-sm`}>Uncover the truth behind any news headline or article snippet.</p>
-          </div>
-          <button 
-            onClick={handleLoadSample}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all border ${isDarkMode ? 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10' : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'}`}
-          >
-            Load Sample Data
-          </button>
+        <div className="mb-4">
+          <h2 className="text-2xl font-bold mb-1">Verify News Accuracy</h2>
+          <p className={`${isDarkMode ? 'text-[#94A3B8]' : 'text-slate-500'} text-sm`}>Uncover the truth behind any news headline or article snippet.</p>
         </div>
         
         <div className="relative mb-6">
@@ -425,7 +395,12 @@ const VerificationView: React.FC<VerificationViewProps> = ({
             const refutingSources = sourceComparison.filter((s: any) => s.relationship === 'REFUTES');
 
             return (
-              <div className={`lg:col-span-3 p-8 rounded-2xl border ${getStatusBg(label)} flex flex-col items-center text-center`}>
+              <div className={`lg:col-span-3 p-8 rounded-2xl border ${getStatusBg(label)} flex flex-col items-center text-center relative`}>
+                {/* ── Confidence pill (top-right) ── */}
+                <div className="absolute top-5 right-5 flex flex-col items-end">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Confidence</span>
+                  <span className={`text-xl font-black ${getStatusColor(label)}`}>{(score * 100).toFixed(0)}%</span>
+                </div>
                 {/* ── Verdict Header ── */}
                 <div className={`w-20 h-20 rounded-full mb-4 flex items-center justify-center ${getStatusColor(label)} bg-white shadow-xl`}>
                    {isReal ? (
@@ -439,23 +414,10 @@ const VerificationView: React.FC<VerificationViewProps> = ({
                 <h3 className={`text-4xl font-black uppercase tracking-tight mb-2 ${getStatusColor(label)}`}>
                    VERDICT: {labelUpper}
                 </h3>
-                <div className="flex flex-col items-center gap-2 mt-4">
-                  <div className="flex items-center gap-6">
-                    <div className="text-center">
-                      <span className="block text-[10px] font-bold uppercase text-slate-400">Risk Score</span>
-                      <span className="text-2xl font-black">{(score * 100).toFixed(0)}%</span>
-                      <span className="block text-[8px] text-slate-400 mt-0.5">{score <= 0.35 ? '(Low fake risk)' : score >= 0.65 ? '(High fake risk)' : '(Uncertain)'}</span>
-                    </div>
-                    <div className="h-10 w-px bg-slate-300"></div>
-                    <div className="text-center">
-                      <span className="block text-[10px] font-bold uppercase text-slate-400">Analysis Mode</span>
-                      <span className={`text-2xl font-black uppercase text-emerald-600`}>DEEP SCAN</span>
-                    </div>
-                  </div>
+                <div className="mt-5 flex items-center justify-center gap-3 text-[10px] font-bold uppercase text-slate-400">
+                  <span className="px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-600">DEEP SCAN</span>
                   {result.processingTimeMs && (
-                    <span className="text-[10px] font-bold text-slate-400 uppercase mt-1">
-                      Processed in {result.processingTimeMs} ms
-                    </span>
+                    <span>Processed in {result.processingTimeMs} ms</span>
                   )}
                 </div>
 
@@ -878,31 +840,37 @@ const VerificationView: React.FC<VerificationViewProps> = ({
              </h4>
              <div className="space-y-4 mono text-[10px] uppercase">
                 {result.blockchain ? (
-                  <div className="bg-slate-900 text-slate-300 p-4 rounded-xl border border-white/5 space-y-2">
-                    <div className="flex justify-between">
-                      <span className="opacity-40">Network</span>
-                      <span className="text-emerald-400">{result.blockchain.network}</span>
+                  <div className="bg-slate-900 text-slate-300 p-4 rounded-xl border border-white/5 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="opacity-40 shrink-0">Network</span>
+                      <span className="text-emerald-400 text-right">{result.blockchain.network}</span>
                     </div>
-                    <div className="flex flex-col gap-1">
-                      <span className="opacity-40">TX_HASH</span>
-                      <span className="text-emerald-400 break-all">{result.blockchain.transactionHash}</span>
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="opacity-40 shrink-0">TX Hash</span>
+                      <span className="text-emerald-400 text-right break-all">{result.blockchain.transactionHash}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="opacity-40">TIMESTAMP</span>
-                      <span>{result.blockchain.timestamp}</span>
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="opacity-40 shrink-0">Timestamp</span>
+                      <span className="text-right">{result.blockchain.timestamp}</span>
                     </div>
-                    <div className="pt-2 flex justify-between">
-                       <span className="opacity-40">DATA_IPFS</span>
+                    <div className="flex items-start justify-between gap-3">
+                       <span className="opacity-40 shrink-0">Data IPFS</span>
                        {result.blockchain.ipfsHash ? (
-                         <span className="text-emerald-300 underline cursor-pointer">
+                         <span className="text-emerald-300 underline cursor-pointer text-right break-all">
                            {result.blockchain.ipfsHash.length > 12 
                              ? `${result.blockchain.ipfsHash.substr(0, 12)}...` 
                              : result.blockchain.ipfsHash}
                          </span>
                        ) : (
-                         <span>N/A</span>
+                         <span className="text-right">N/A</span>
                        )}
                     </div>
+                    {result.blockchain.blockNumber !== undefined && result.blockchain.blockNumber > 0 && (
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="opacity-40 shrink-0">Block</span>
+                        <span className="text-right">{result.blockchain.blockNumber}</span>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="text-xs opacity-50 italic p-4 text-center border border-dashed border-slate-300 dark:border-slate-800 rounded-xl">
@@ -946,9 +914,20 @@ const VerificationView: React.FC<VerificationViewProps> = ({
              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
              Manual Dispute
            </button>
-           <button className="px-10 py-3 rounded-2xl text-sm font-bold bg-emerald-500 text-white flex items-center gap-3 shadow-xl shadow-emerald-500/30 hover:scale-105 transition-all active:scale-95">
-             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
-             Share Verification
+           <button
+             onClick={handleShare}
+             className={`px-10 py-3 rounded-2xl text-sm font-bold text-white flex items-center gap-3 shadow-xl transition-all active:scale-95 ${
+               shareStatus === 'idle'
+                 ? 'bg-emerald-500 shadow-emerald-500/30 hover:scale-105'
+                 : 'bg-slate-500 shadow-slate-500/30'
+             }`}
+           >
+             {shareStatus !== 'idle' ? (
+               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" /></svg>
+             ) : (
+               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" /></svg>
+             )}
+             {shareStatus === 'idle' ? 'Share via WhatsApp' : shareStatus === 'copied' ? 'Copied to Clipboard!' : 'Opened in WhatsApp!'}
            </button>
         </div>
       )}

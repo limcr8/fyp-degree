@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { ViewType } from '../types';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { createUserWithEmailAndPassword, updateProfile, User } from 'firebase/auth';
 import { auth, db } from '../services/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { registerBackendUser, loginBackendUser } from '../services/apiService';
@@ -9,9 +9,10 @@ import { registerBackendUser, loginBackendUser } from '../services/apiService';
 interface SignupViewProps {
   setView: (view: ViewType) => void;
   isDarkMode: boolean;
+  setUser: (user: User | null) => void;
 }
 
-const SignupView: React.FC<SignupViewProps> = ({ setView, isDarkMode }) => {
+const SignupView: React.FC<SignupViewProps> = ({ setView, isDarkMode, setUser }) => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,28 +28,23 @@ const SignupView: React.FC<SignupViewProps> = ({ setView, isDarkMode }) => {
     setLoading(true);
 
     try {
-      // 1. Call Backend Registration API first
-      const formattedUsername = name.replace(/\s+/g, '_').toLowerCase() || email.split('@')[0];
-      const backendUser = await registerBackendUser(formattedUsername, email, password);
-      const generatedApiKey = backendUser.api_key;
-
-      // 2. Call Firebase Registration
+      // 1. Create Firebase Auth user first so we have the uid
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       if (userCredential.user) {
-        // Update Auth Profile
-        await updateProfile(userCredential.user, {
-          displayName: name,
-        });
+        await updateProfile(userCredential.user, { displayName: name });
+      }
 
-        // Save user record in Cloud Firestore database with the API Key
-        await setDoc(doc(db, 'users', userCredential.user.uid), {
-          uid: userCredential.user.uid,
-          name: name,
-          email: email,
-          createdAt: new Date().toISOString(),
-          apiKey: generatedApiKey,
-          backendUserId: backendUser.user_id
-        });
+      // 2. Register with backend (uses display name; backend auto-generates if empty)
+      const backendUser = await registerBackendUser(name, email, password, userCredential.user?.uid);
+      const generatedApiKey = backendUser.api_key;
+
+      if (userCredential.user) {
+        // Sync local user state immediately so displayName is populated in top-right nav
+        await userCredential.user.reload();
+        setUser(null);
+        setTimeout(() => {
+          setUser(auth.currentUser);
+        }, 0);
       }
 
       // 3. Authenticate with backend API to retrieve access tokens immediately

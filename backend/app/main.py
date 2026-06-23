@@ -3,6 +3,15 @@ import json
 import os
 import time
 
+# MUST run before any app module that calls os.getenv()/os.environ.get().
+# pydantic-settings loads .env only into the Settings object and does NOT
+# populate os.environ, so without this, firebase_client.py (and the
+# ADMIN_EMAILS read in auth_service.py) silently see None and fall back to
+# LocalFileFirestoreDb — causing the Portal to read local files instead of
+# the configured Firebase project.
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -11,6 +20,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.analyze import router as analyze_router
 from app.api.auth import router as auth_router
+from app.api.feedback import router as feedback_router
 from app.core.config import get_settings
 from app.core.firebase_client import get_db
 from app.schemas.health import HealthResponse, ServicesHealth
@@ -39,6 +49,7 @@ app.add_middleware(
 
 app.include_router(analyze_router)
 app.include_router(auth_router)
+app.include_router(feedback_router)
 
 
 @app.get("/health")

@@ -49,6 +49,7 @@ export interface SearchParams {
 export interface SearchResultItem {
   article_id: string;
   text: string;
+  title?: string;
   classification: {
     verdict: string;
     confidence: number;
@@ -112,14 +113,18 @@ export interface BackendRegisterResponse {
 export const registerBackendUser = async (
   username: string,
   email: string,
-  password: string
+  password: string,
+  firebaseUid?: string
 ): Promise<BackendRegisterResponse> => {
+  const body: Record<string, string> = { email, password };
+  if (username && username.trim()) body.username = username.trim();
+  if (firebaseUid) body.firebase_uid = firebaseUid;
   const response = await fetch(`${API_BASE_URL}/api/v1/auth/register`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ username, email, password }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -498,6 +503,7 @@ export interface VerificationStats {
   total: number;
   fake: number;
   real: number;
+  uncertain: number;
 }
 
 export interface ModelPerformanceStats {
@@ -541,6 +547,93 @@ export const getAdminAnalytics = async (
   }
 
   return response.json() as Promise<AdminAnalyticsResponse>;
+};
+
+
+export interface AdminTrendPoint {
+  date: string;
+  count: number;
+}
+
+export interface AdminTrendResponse {
+  days: number;
+  trend: AdminTrendPoint[];
+}
+
+export const getAdminTrend = async (
+  accessToken: string,
+  adminToken: string,
+  days: number = 7
+): Promise<AdminTrendResponse> => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/admin/trend?days=${days}`, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "X-Admin-Token": adminToken,
+    },
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.detail || await response.text();
+    throw new Error(message || "Failed to retrieve verification trend.");
+  }
+
+  return response.json() as Promise<AdminTrendResponse>;
+};
+
+
+export interface SystemHealthResponse {
+  status: string;
+  timestamp: string;
+  services: {
+    api: string;
+    database: string;
+    bert_model: string;
+    cache: string;
+  };
+  version: string;
+  uptime_seconds: number;
+}
+
+export const getSystemHealth = async (): Promise<SystemHealthResponse> => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/health`, {
+    method: "GET",
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.detail || await response.text();
+    throw new Error(message || "Failed to retrieve system health.");
+  }
+
+  return response.json() as Promise<SystemHealthResponse>;
+};
+
+
+export interface SystemStatusResponse {
+  overall_status: string;
+  components: {
+    api_server: { status: string; response_time_ms: number };
+    database: { status: string; connection_pool: string };
+    ml_models: { status: string; bert_loaded: boolean; average_inference_time_ms: number };
+    external_apis: { google_search: string; twitter: string; redis: string };
+  };
+  last_checked: string;
+}
+
+export const getSystemStatus = async (): Promise<SystemStatusResponse> => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/status`, {
+    method: "GET",
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.detail || await response.text();
+    throw new Error(message || "Failed to retrieve system status.");
+  }
+
+  return response.json() as Promise<SystemStatusResponse>;
 };
 
 
@@ -645,6 +738,36 @@ export const submitUserFeedback = async (
   }
 
   return response.json() as Promise<FeedbackResponse>;
+};
+
+export interface FeedbackItem {
+  feedback_id: string;
+  article_id: string;
+  feedback_type: string;
+  message: string;
+  user_email: string;
+  submitted_at?: string;
+  created_at?: string;
+  status?: string;
+}
+
+export interface FeedbackListResponse {
+  count: number;
+  feedback: FeedbackItem[];
+}
+
+export const getAdminFeedback = async (): Promise<FeedbackListResponse> => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/feedback`, {
+    method: "GET",
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.detail || await response.text();
+    throw new Error(message || "Failed to retrieve user feedback.");
+  }
+
+  return response.json() as Promise<FeedbackListResponse>;
 };
 
 export const downloadArticlePdf = async (

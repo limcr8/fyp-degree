@@ -78,6 +78,44 @@ def verify_topics(text: str, settings: Settings | None = None) -> list[SourceMat
     return matches
 
 
+def _is_valid_entity(value: str) -> bool:
+    """
+    Validates that an entity string is clean and searchable.
+
+    Filters out corrupted entities containing replacement characters
+    (U+FFFD), control characters, or other encoding artifacts that
+    would poison search queries.
+
+    Args:
+        value (str): Entity text to validate.
+
+    Returns:
+        bool: Whether the entity is clean enough to use in a search query.
+    """
+    # Reject empty or whitespace-only strings
+    if not value or not value.strip():
+        return False
+
+    # Reject strings containing the Unicode replacement character (mojibake)
+    if '\ufffd' in value:
+        return False
+
+    # Reject strings with control characters (except space/tab/newline)
+    if any(ord(ch) < 32 and ch not in ' \t\n' for ch in value):
+        return False
+
+    # Reject strings that are mostly non-alphanumeric (likely binary garbage)
+    alphanumeric = sum(1 for ch in value if ch.isalnum())
+    if len(value) > 0 and alphanumeric / len(value) < 0.5:
+        return False
+
+    # Reject very short entities (single chars or less)
+    if len(value.strip()) < 2:
+        return False
+
+    return True
+
+
 def extract_entities(text: str) -> list[str]:
     """
     Extracts unique topic entities from text using spaCy NER.
@@ -94,7 +132,12 @@ def extract_entities(text: str) -> list[str]:
 
     for entity in doc.ents:
         value = entity.text.strip()
-        if entity.label_ in SUPPORTED_ENTITY_LABELS and value and value not in entities:
+        if (
+            entity.label_ in SUPPORTED_ENTITY_LABELS
+            and value
+            and value not in entities
+            and _is_valid_entity(value)
+        ):
             entities.append(value)
 
     return entities[:5]

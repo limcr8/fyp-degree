@@ -183,14 +183,29 @@ def anchor_ipfs_hash(
     transaction_hash = web3.eth.send_raw_transaction(
         signed_transaction.raw_transaction
     )
-    receipt = web3.eth.wait_for_transaction_receipt(transaction_hash)
+
+    # Wait for the receipt with a shorter timeout and graceful fallback.
+    # Sepolia can be congested; instead of blocking 120s and crashing,
+    # we wait up to 60s then return a 'pending' proof if not yet mined.
+    try:
+        receipt = web3.eth.wait_for_transaction_receipt(transaction_hash, timeout=60)
+        block_number = receipt.blockNumber
+        network_name = "EVM Testnet"
+    except Exception as wait_exc:
+        logger.warning(
+            "Transaction %s submitted but not mined within 60s; returning pending proof: %s",
+            web3.to_hex(transaction_hash),
+            str(wait_exc),
+        )
+        block_number = 0
+        network_name = "EVM Testnet (Pending)"
 
     return BlockchainProof(
         transactionHash=web3.to_hex(transaction_hash),
-        blockNumber=receipt.blockNumber,
+        blockNumber=block_number,
         timestamp=_utc_timestamp(),
         ipfsHash=ipfs_hash,
-        network="EVM Testnet",
+        network=network_name,
     )
 
 
@@ -263,19 +278,31 @@ def _ipfs_is_configured(settings: Settings) -> bool:
 
 def _web3_is_configured(settings: Settings) -> bool:
     """
-    Checks whether EVM anchoring credentials are configured.
+    Checks whether EVM anchoring credentials are configured AND valid.
+
+    Detects common placeholder values (e.g. 'your_key', 'PASTE_YOUR',
+    'xxx') so the system falls back to local proof instead of throwing
+    a 401 Unauthorized error against the blockchain RPC endpoint.
 
     Args:
         settings (Settings): Runtime settings.
 
     Returns:
-        bool: Whether EVM anchoring is configured.
+        bool: Whether real EVM anchoring credentials are configured.
     """
-    return bool(
-        settings.web3_provider_url
-        and settings.web3_private_key
-        and settings.web3_chain_id
-    )
+    if not (settings.web3_provider_url and settings.web3_private_key and settings.web3_chain_id):
+        return False
+
+    # Detect placeholder values that would cause auth failures
+    provider_lower = settings.web3_provider_url.lower()
+    placeholders = ["your_key", "paste_your", "your-key", "yourkey", "xxx", "placeholder"]
+    if any(ph in provider_lower for ph in placeholders):
+        logger.info(
+            "Web3 provider URL contains a placeholder value; skipping blockchain anchoring."
+        )
+        return False
+
+    return True
 
 
 def _utc_timestamp() -> str:

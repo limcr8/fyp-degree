@@ -1,6 +1,8 @@
 import logging
 
-from fastapi import APIRouter, HTTPException, Header, Response
+from fastapi import APIRouter, HTTPException, Header, Response, Depends
+
+from app.core.security import require_api_key
 
 from app.schemas.analysis import (
     AnalyzeRequest,
@@ -23,20 +25,25 @@ router = APIRouter(tags=["analysis"])
 def analyze_news(
     request: AnalyzeRequest,
     authorization: str | None = Header(None, description="Optional Bearer token"),
+    api_access_token: str | None = Depends(require_api_key),
 ) -> AnalyzeResponse:
     """
     Analyzes a news text snippet and returns a frontend-compatible report.
 
+    Accepts either a per-user X-API-Key header (subject to daily quota) or an
+    optional Bearer session token for authenticated web clients.
+
     Args:
         request (AnalyzeRequest): The validated analysis request.
         authorization (str | None): Optional Bearer token header.
+        api_access_token (str | None): Access token resolved from X-API-Key.
 
     Returns:
         AnalyzeResponse: The aggregated verification report.
     """
     try:
-        access_token = None
-        if authorization and authorization.startswith("Bearer "):
+        access_token = api_access_token
+        if not access_token and authorization and authorization.startswith("Bearer "):
             access_token = authorization.split(" ")[1]
         response = analyze_text(request, access_token=access_token)
         logger.info(

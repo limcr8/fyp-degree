@@ -121,10 +121,17 @@ def test_create_integrity_proof_falls_back_without_credentials() -> None:
     """
     Verifies local proof fallback when IPFS or blockchain is not configured.
     """
+    settings = Settings(
+        ipfs_api_url="",
+        ipfs_api_key="",
+        web3_provider_url="",
+        web3_private_key="",
+        web3_chain_id=0,
+    )
     proof = create_integrity_proof(
         report_id="report-1",
         report_payload={"id": "report-1"},
-        settings=Settings(),
+        settings=settings,
     )
 
     assert proof.transaction_hash.startswith("0x")
