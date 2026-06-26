@@ -64,6 +64,18 @@ const Layout: React.FC<LayoutProps> = ({
                 >
                   Feedback
                 </button>
+                <button
+                  onClick={() => setView('admin-sources')}
+                  className={`hover:text-emerald-500 transition-colors ${activeView === 'admin-sources' ? 'text-emerald-500' : ''}`}
+                >
+                  Trusted Sources
+                </button>
+                <button
+                  onClick={() => setView('admin-datasets')}
+                  className={`hover:text-emerald-500 transition-colors ${activeView === 'admin-datasets' ? 'text-emerald-500' : ''}`}
+                >
+                  Datasets
+                </button>
               </>
             ) : (
               <>
@@ -201,6 +213,26 @@ const Layout: React.FC<LayoutProps> = ({
                   }`}
                 >
                   Feedback
+                </button>
+                <button
+                  onClick={() => { setView('admin-sources'); setMobileMenuOpen(false); }}
+                  className={`block w-full text-left px-4 py-2.5 rounded-lg font-medium transition-colors ${
+                    activeView === 'admin-sources'
+                      ? 'text-emerald-500 bg-emerald-500/10'
+                      : isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  Trusted Sources
+                </button>
+                <button
+                  onClick={() => { setView('admin-datasets'); setMobileMenuOpen(false); }}
+                  className={`block w-full text-left px-4 py-2.5 rounded-lg font-medium transition-colors ${
+                    activeView === 'admin-datasets'
+                      ? 'text-emerald-500 bg-emerald-500/10'
+                      : isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  Datasets
                 </button>
               </>
             ) : (

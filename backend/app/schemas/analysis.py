@@ -172,10 +172,10 @@ class AnalyzeResponse(BaseModel):
     text: str
     title: str | None = Field(default=None, alias="title")
     classification: ClassificationDetail
-    explanation: ExplanationDetail
-    verification: VerificationDetail
-    final_assessment: FinalAssessment = Field(alias="finalAssessment")
-    blockchain: BlockchainProof
+    explanation: ExplanationDetail | None = Field(default=None, alias="explanation")
+    verification: VerificationDetail | None = Field(default=None, alias="verification")
+    final_assessment: FinalAssessment | None = Field(default=None, alias="finalAssessment")
+    blockchain: BlockchainProof | None = Field(default=None, alias="blockchain")
     processing_time_ms: int = Field(alias="processingTimeMs")
     created_at: str | None = Field(default=None, alias="createdAt")
     platform: str | None = "website"

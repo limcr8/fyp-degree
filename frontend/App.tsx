@@ -219,6 +219,10 @@ const App: React.FC = () => {
         return <AdminView isDarkMode={isDarkMode} profile={profile} activePage="users" />;
       case 'admin-feedback':
         return <AdminView isDarkMode={isDarkMode} profile={profile} activePage="feedback" />;
+      case 'admin-sources':
+        return <AdminView isDarkMode={isDarkMode} profile={profile} activePage="sources" />;
+      case 'admin-datasets':
+        return <AdminView isDarkMode={isDarkMode} profile={profile} activePage="datasets" />;
       case 'profile':
         return <ProfileView isDarkMode={isDarkMode} profile={profile} setProfile={setProfile} setUser={setUser} />;
       case 'portal':

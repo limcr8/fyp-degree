@@ -492,7 +492,7 @@ def _history_item_to_analyze_response(item: dict) -> AnalyzeResponse | None:
             language=item.get("language") or "en",
         )
     except Exception:
-        logger.warning("Could not convert history item to AnalyzeResponse: %s", item.get("article_id"))
+        logger.exception("Could not convert history item to AnalyzeResponse: %s", item.get("article_id"))
         return None
 
 

@@ -1,4 +1,5 @@
 import logging
+import time
 import xml.etree.ElementTree as ET
 from functools import lru_cache
 from urllib.parse import urlparse
@@ -6,6 +7,7 @@ from urllib.parse import urlparse
 import httpx
 
 from app.core.config import Settings, get_settings
+from app.core.firebase_client import get_db
 from app.schemas.analysis import SourceMatch
 
 logger = logging.getLogger(__name__)
@@ -42,6 +44,55 @@ AUTHORITATIVE_DOMAINS = {
     "zaobao.com": "Zaobao",
     "cna.com.tw": "CNA Taiwan",
 }
+
+_TRUSTED_CACHE: dict[str, object] = {"data": None, "ts": 0.0}
+_TRUSTED_CACHE_TTL_SECONDS: int = 300
+
+
+def get_authoritative_domains() -> dict[str, str]:
+    """
+    Returns the authoritative domain -> display-name map used by verification.
+
+    Merges the built-in baseline with admin-managed entries in the
+    ``trusted_sources`` Firestore collection. Admin entries override the
+    baseline by domain key; entries flagged ``active=False`` remove a domain
+    (so admins can disable a baseline source). The result is cached for
+    ``_TRUSTED_CACHE_TTL_SECONDS`` to avoid a Firestore read per request.
+
+    Returns:
+        dict[str, str]: Active authoritative domains ready for verification.
+    """
+    now = time.time()
+    cached = _TRUSTED_CACHE["data"]
+    if cached is not None and (now - _TRUSTED_CACHE["ts"]) < _TRUSTED_CACHE_TTL_SECONDS:
+        return cached  # type: ignore[return-value]
+
+    result: dict[str, str] = dict(AUTHORITATIVE_DOMAINS)
+    try:
+        db = get_db()
+        for doc in db.collection("trusted_sources").stream():
+            data = doc.to_dict() or {}
+            domain = str(data.get("domain", "")).strip().lower()
+            name = str(data.get("display_name", "")).strip()
+            if not domain:
+                continue
+            if data.get("active", True):
+                if name:
+                    result[domain] = name
+            else:
+                result.pop(domain, None)
+    except Exception:
+        logger.exception("Failed to load admin trusted_sources; using baseline.")
+
+    _TRUSTED_CACHE["data"] = result
+    _TRUSTED_CACHE["ts"] = now
+    return result
+
+
+def invalidate_trusted_sources_cache() -> None:
+    """Clears the trusted-source cache so the next read picks up admin edits."""
+    _TRUSTED_CACHE["data"] = None
+    _TRUSTED_CACHE["ts"] = 0.0
 
 
 def verify_topics(text: str, settings: Settings | None = None) -> list[SourceMatch]:
@@ -192,7 +243,7 @@ def _build_query(entities: list[str]) -> str:
         str: Search query.
     """
     topic = " ".join(entities[:3])
-    domains = list(AUTHORITATIVE_DOMAINS.keys()) + [".gov", ".org"]
+    domains = list(get_authoritative_domains().keys()) + [".gov", ".org"]
     domain_filter = " OR ".join(
         f"site:{domain}" for domain in domains
     )
@@ -212,7 +263,7 @@ def _source_name_from_url(url: str) -> str | None:
     hostname = urlparse(url).hostname or ""
     normalized = hostname.removeprefix("www.").lower()
 
-    for domain, source_name in AUTHORITATIVE_DOMAINS.items():
+    for domain, source_name in get_authoritative_domains().items():
         if normalized == domain or normalized.endswith(f".{domain}"):
             return source_name
 
@@ -379,9 +430,10 @@ def search_google_news_rss(
         # Check if this source is in our authoritative domains list
         source_hostname = urlparse(source_url).hostname or ""
         normalized_host = source_hostname.removeprefix("www.").lower()
+        active_domains = get_authoritative_domains()
         is_authoritative = any(
             normalized_host == domain or normalized_host.endswith(f".{domain}")
-            for domain in AUTHORITATIVE_DOMAINS
+            for domain in active_domains
         ) or ".gov" in normalized_host or ".org" in normalized_host
 
         matches.append(SourceMatch(
@@ -509,8 +561,8 @@ def search_authoritative_sources_with_context(
                 continue
             
         matches.append(SourceMatch(
-            name=source_name, 
-            confirmed=(source_name in AUTHORITATIVE_DOMAINS.values() or ".gov" in link or ".org" in link), 
+            name=source_name,
+            confirmed=(source_name in get_authoritative_domains().values() or ".gov" in link or ".org" in link),
             url=link
         ))
         snippets.append({

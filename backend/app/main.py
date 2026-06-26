@@ -21,6 +21,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api.analyze import router as analyze_router
 from app.api.auth import router as auth_router
 from app.api.feedback import router as feedback_router
+from app.api.trusted_sources import router as trusted_sources_router
+from app.api.datasets import router as datasets_router
 from app.core.config import get_settings
 from app.core.firebase_client import get_db
 from app.schemas.health import HealthResponse, ServicesHealth
@@ -50,6 +52,8 @@ app.add_middleware(
 app.include_router(analyze_router)
 app.include_router(auth_router)
 app.include_router(feedback_router)
+app.include_router(trusted_sources_router)
+app.include_router(datasets_router)
 
 
 @app.get("/health")

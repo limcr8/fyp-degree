@@ -790,6 +790,266 @@ export const downloadArticlePdf = async (
   return response.blob();
 };
 
+export interface TrustedSourceItem {
+  source_id: string;
+  domain: string;
+  display_name: string;
+  tier: string;
+  region: string;
+  active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface TrustedSourceListResponse {
+  sources: TrustedSourceItem[];
+  total_count: number;
+}
+
+export interface TrustedSourcePayload {
+  domain: string;
+  display_name: string;
+  tier?: string;
+  region?: string;
+  active?: boolean;
+}
+
+export interface TrustedSourceUpdatePayload {
+  display_name?: string;
+  tier?: string;
+  region?: string;
+  active?: boolean;
+}
+
+export interface TrustedSourceMutationResponse {
+  message: string;
+  source_id?: string;
+}
+
+export const getTrustedSources = async (
+  accessToken: string,
+  adminToken: string
+): Promise<TrustedSourceListResponse> => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/admin/trusted-sources`, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "X-Admin-Token": adminToken,
+    },
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.detail || await response.text();
+    throw new Error(message || "Failed to retrieve trusted sources.");
+  }
+  return response.json() as Promise<TrustedSourceListResponse>;
+};
+
+export const createTrustedSource = async (
+  accessToken: string,
+  adminToken: string,
+  payload: TrustedSourcePayload
+): Promise<TrustedSourceMutationResponse> => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/admin/trusted-sources`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${accessToken}`,
+      "X-Admin-Token": adminToken,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.detail || await response.text();
+    throw new Error(message || "Failed to create trusted source.");
+  }
+  return response.json() as Promise<TrustedSourceMutationResponse>;
+};
+
+export const updateTrustedSource = async (
+  accessToken: string,
+  adminToken: string,
+  sourceId: string,
+  payload: TrustedSourceUpdatePayload
+): Promise<TrustedSourceMutationResponse> => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/admin/trusted-sources/${sourceId}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${accessToken}`,
+      "X-Admin-Token": adminToken,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.detail || await response.text();
+    throw new Error(message || "Failed to update trusted source.");
+  }
+  return response.json() as Promise<TrustedSourceMutationResponse>;
+};
+
+export const deleteTrustedSource = async (
+  accessToken: string,
+  adminToken: string,
+  sourceId: string
+): Promise<TrustedSourceMutationResponse> => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/admin/trusted-sources/${sourceId}`, {
+    method: "DELETE",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "X-Admin-Token": adminToken,
+    },
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.detail || await response.text();
+    throw new Error(message || "Failed to delete trusted source.");
+  }
+  return response.json() as Promise<TrustedSourceMutationResponse>;
+};
+
+export const seedTrustedSources = async (
+  accessToken: string,
+  adminToken: string
+): Promise<TrustedSourceMutationResponse> => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/admin/trusted-sources/seed`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "X-Admin-Token": adminToken,
+    },
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.detail || await response.text();
+    throw new Error(message || "Failed to seed trusted sources.");
+  }
+  return response.json() as Promise<TrustedSourceMutationResponse>;
+};
+
+export interface DatasetStats {
+  total_rows: number;
+  valid_samples: number;
+  completeness_pct: number;
+  label_distribution: Record<string, number>;
+  languages: Record<string, number>;
+  top_sources: { source: string; count: number }[];
+  is_balanced: boolean;
+  quality_tier: string;
+}
+
+export interface DatasetItem {
+  dataset_id: string;
+  filename: string;
+  storage_path: string;
+  file_size_bytes: number;
+  file_size_display: string;
+  uploaded_at: string;
+  uploaded_by: string;
+  is_active: boolean;
+  stats: DatasetStats | null;
+}
+
+export interface DatasetListResponse {
+  datasets: DatasetItem[];
+  total_count: number;
+}
+
+export interface DatasetUploadResponse {
+  message: string;
+  dataset_id: string;
+  stats: DatasetStats;
+}
+
+export interface DatasetMutationResponse {
+  message: string;
+  dataset_id?: string;
+}
+
+export const getDatasets = async (
+  accessToken: string,
+  adminToken: string
+): Promise<DatasetListResponse> => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/admin/datasets`, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "X-Admin-Token": adminToken,
+    },
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.detail || await response.text();
+    throw new Error(message || "Failed to retrieve datasets.");
+  }
+  return response.json() as Promise<DatasetListResponse>;
+};
+
+export const uploadDataset = async (
+  accessToken: string,
+  adminToken: string,
+  file: File
+): Promise<DatasetUploadResponse> => {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch(`${API_BASE_URL}/api/v1/admin/datasets`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "X-Admin-Token": adminToken,
+    },
+    body: formData,
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.detail || await response.text();
+    throw new Error(message || "Failed to upload dataset.");
+  }
+  return response.json() as Promise<DatasetUploadResponse>;
+};
+
+export const activateDataset = async (
+  accessToken: string,
+  adminToken: string,
+  datasetId: string
+): Promise<DatasetMutationResponse> => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/admin/datasets/${datasetId}/activate`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "X-Admin-Token": adminToken,
+    },
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.detail || await response.text();
+    throw new Error(message || "Failed to activate dataset.");
+  }
+  return response.json() as Promise<DatasetMutationResponse>;
+};
+
+export const deleteDataset = async (
+  accessToken: string,
+  adminToken: string,
+  datasetId: string
+): Promise<DatasetMutationResponse> => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/admin/datasets/${datasetId}`, {
+    method: "DELETE",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "X-Admin-Token": adminToken,
+    },
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.detail || await response.text();
+    throw new Error(message || "Failed to delete dataset.");
+  }
+  return response.json() as Promise<DatasetMutationResponse>;
+};
+
 export const exportSearchCsv = async (
   accessToken: string,
   params: SearchParams
