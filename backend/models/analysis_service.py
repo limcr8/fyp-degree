@@ -688,7 +688,7 @@ def search_reports(
             title=getattr(rep, "title", None) or _extract_headline(rep.text),
             classification=ClassificationDetail(
                 verdict=_resolve_displayed_verdict(rep),
-                confidence=rep.final_assessment.score if (rep.final_assessment and rep.final_assessment.score is not None) else (rep.classification.confidence if rep.classification else 0.0),
+                confidence=_resolve_display_confidence(rep),
                 risk_level=rep.classification.risk_level if rep.classification else "medium",
                 explanation=rep.classification.explanation if rep.classification else "",
             ) if rep.classification else rep.classification,
@@ -751,6 +751,32 @@ def _resolve_displayed_verdict(report) -> str:
     if report.classification and report.classification.verdict:
         return report.classification.verdict.upper().replace("_", " ")
     return "UNCERTAIN"
+
+
+def _resolve_display_confidence(report) -> float:
+    """
+    Resolves a user-facing confidence percentage for a report.
+
+    final_assessment.score is a RISK score (0=safe, 1=risky), not a
+    confidence score. To show meaningful confidence we invert it for
+    non-fake verdicts so that a low-risk REAL article displays high
+    confidence (e.g. risk 0.06 -> 94% confident it is real).
+
+    Args:
+        report: An AnalyzeResponse / report object.
+
+    Returns:
+        float: Verdict-aware confidence in the range 0.0 to 1.0.
+    """
+    if report.final_assessment and report.final_assessment.score is not None:
+        verdict = _resolve_displayed_verdict(report)
+        risk = float(report.final_assessment.score)
+        if "FAKE" in verdict:
+            return round(min(max(risk, 0.0), 1.0), 4)
+        return round(min(max(1.0 - risk, 0.0), 1.0), 4)
+    if report.classification and report.classification.confidence is not None:
+        return float(report.classification.confidence)
+    return 0.5
 
 
 def get_trending_topics(

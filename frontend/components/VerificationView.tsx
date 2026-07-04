@@ -381,6 +381,9 @@ const VerificationView: React.FC<VerificationViewProps> = ({
             const labelUpper = label.toUpperCase().replace('_', ' ');
             const isReal = labelUpper.includes('REAL');
             const isFake = labelUpper.includes('FAKE');
+            const displayConfidence = result.finalAssessment
+              ? (isFake ? score : (1 - score))
+              : (result.confidence !== undefined ? result.confidence : 0.5);
 
             // Evidence data
             const aiSummary = result.verification?.summary || '';
@@ -399,7 +402,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({
                 {/* ── Confidence pill (top-right) ── */}
                 <div className="absolute top-5 right-5 flex flex-col items-end">
                   <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Confidence</span>
-                  <span className={`text-xl font-black ${getStatusColor(label)}`}>{(score * 100).toFixed(0)}%</span>
+                  <span className={`text-xl font-black ${getStatusColor(label)}`}>{(displayConfidence * 100).toFixed(0)}%</span>
                 </div>
                 {/* ── Verdict Header ── */}
                 <div className={`w-20 h-20 rounded-full mb-4 flex items-center justify-center ${getStatusColor(label)} bg-white shadow-xl`}>
@@ -599,9 +602,24 @@ const VerificationView: React.FC<VerificationViewProps> = ({
 
             const totalCount = sources.length;
             const confirmedCount = sources.filter(s => s.confirmed).length;
-            const supportsCount = Object.values(relationshipMap).filter((r: any) => r === 'SUPPORTS').length;
-            const refutesCount = Object.values(relationshipMap).filter((r: any) => r === 'REFUTES').length;
-            const unrelatedCount = Object.values(relationshipMap).filter((r: any) => r === 'UNRELATED').length;
+            
+            let supportsCount = 0;
+            let refutesCount = 0;
+            let unrelatedCount = 0;
+            
+            sources.forEach(source => {
+              if (source && source.name) {
+                const nameLower = source.name.toLowerCase();
+                const relation = relationshipMap[nameLower] || (source.confirmed ? 'SUPPORTS' : 'UNRELATED');
+                if (relation === 'SUPPORTS') {
+                  supportsCount++;
+                } else if (relation === 'REFUTES') {
+                  refutesCount++;
+                } else {
+                  unrelatedCount++;
+                }
+              }
+            });
 
             // Helper to map relationship to display
             const getRelationBadge = (relation: string) => {
