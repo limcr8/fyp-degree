@@ -1,0 +1,5 @@
+{
+  "name": "Fake News Detection",
+  "description": "A sophisticated news verification platform using a FastAPI AI backend and blockchain for immutable fact-checking, featuring SHAP explanations and source grounding.",
+  "requestFramePermissions": []
+}

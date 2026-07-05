@@ -12,6 +12,25 @@ dist
 dist-ssr
 *.local
 
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov
+venv/
+
+# Secrets & credentials — NEVER commit
+.env
+.env.*
+!.env.example
+service-account.json
+*.firebase-adminsdk*.json
+firebase-service-account*.json
+
+# Local Firestore emulator data store (dev only)
+backend/data/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
