@@ -1,0 +1,42 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #0F172A; color: #F1F5F9;
+  display: flex; justify-content: center; padding: 40px 16px;
+}
+.card {
+  width: 100%; max-width: 440px;
+  background: #1E293B; border: 1px solid #334155;
+  border-radius: 16px; padding: 28px;
+}
+h1 { font-size: 22px; margin-bottom: 6px; }
+.sub { font-size: 13px; opacity: 0.6; margin-bottom: 22px; }
+.tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+.tab {
+  flex: 1; padding: 10px; border-radius: 10px; cursor: pointer;
+  background: transparent; color: #94A3B8; border: 1px solid #334155;
+  font-weight: 700; font-size: 13px;
+}
+.tab.active { background: #10b981; color: #fff; border-color: #10b981; }
+.panel { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+label { font-size: 13px; font-weight: 600; }
+input {
+  background: #0F172A; color: #F1F5F9; border: 1px solid #334155;
+  border-radius: 10px; padding: 11px; font-size: 14px; outline: none;
+}
+input:focus { border-color: #10b981; }
+.hint { font-size: 11px; opacity: 0.5; }
+.hint a { color: #10b981; text-decoration: none; }
+.hint a:hover { text-decoration: underline; }
+button {
+  background: #10b981; color: #fff; border: none; cursor: pointer;
+  padding: 11px; border-radius: 10px; font-weight: 700; font-size: 14px; margin-top: 6px;
+}
+button:hover { background: #059669; }
+button:disabled { opacity: 0.5; cursor: wait; }
+.status { font-size: 13px; padding: 10px; border-radius: 8px; margin-bottom: 16px; }
+.status.ok { background: rgba(16,185,129,0.1); color: #10b981; }
+.status.err { background: rgba(244,63,94,0.1); color: #f43f5e; }
+.current { font-size: 13px; opacity: 0.7; border-top: 1px solid #334155; padding-top: 14px; }
+.link { background: transparent; color: #f43f5e; padding: 0; margin: 0 0 0 8px; font-size: 13px; text-decoration: underline; }
+.hidden { display: none; }

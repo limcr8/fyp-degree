@@ -1,0 +1,173 @@
+{
+  "model": "checkpoints/roberta-fake-news",
+  "test_data": "evaluation/crypto_finance_testset.csv",
+  "metrics": {
+    "accuracy": 0.5,
+    "precision_macro": 0.25,
+    "recall_macro": 0.5,
+    "f1_macro": 0.3333,
+    "precision_fake": 0.0,
+    "recall_fake": 0.0,
+    "f1_fake": 0.0,
+    "precision_real": 0.5,
+    "recall_real": 1.0,
+    "f1_real": 0.6667,
+    "confusion_matrix": {
+      "true_positive": 0,
+      "true_negative": 250,
+      "false_positive": 0,
+      "false_negative": 250
+    },
+    "avg_inference_ms": 239.87,
+    "total_samples": 500
+  },
+  "full_report": {
+    "REAL": {
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1-score": 0.6666666666666666,
+      "support": 250.0
+    },
+    "FAKE": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1-score": 0.0,
+      "support": 250.0
+    },
+    "accuracy": 0.5,
+    "macro avg": {
+      "precision": 0.25,
+      "recall": 0.5,
+      "f1-score": 0.3333333333333333,
+      "support": 500.0
+    },
+    "weighted avg": {
+      "precision": 0.25,
+      "recall": 0.5,
+      "f1-score": 0.3333333333333333,
+      "support": 500.0
+    }
+  },
+  "errors": [
+    {
+      "text": "the dangers of romantic love. zero hedge  wwwzerohedgecom   views \ncitis chief political analyst tina fordham has had a ",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.5207
+    },
+    {
+      "text": "Factbox: Trump fills top jobs for his administration. (Reuters) - President-elect Donald Trump will nominate high-freque",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.5212
+    },
+    {
+      "text": "Supreme Court firmly backs abortion rights, tosses Texas law. WASHINGTON (Reuters) - The U.S. Supreme Court on Monday st",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.5194
+    },
+    {
+      "text": "Ryan, House Republicans offer plan to slice U.S. tax rates. WASHINGTON (Reuters) - Republicans in the U.S. House of Repr",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.5248
+    },
+    {
+      "text": "U.S. Labor Dept nominee Puzder withdraws, in blow to Trump. WASHINGTON (Reuters) - In a blow to President Donald Trump a",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.521
+    },
+    {
+      "text": "Wilbur Ross sees 'genuine' national security concern on steel. WASHINGTON (Reuters) - U.S. Commerce Secretary Wilbur Ros",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.5179
+    },
+    {
+      "text": "Moldova PM confident of securing EU funding in 2018. CHISINAU (Reuters) - Moldova s Prime Minister Pavel Filip said on M",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.5191
+    },
+    {
+      "text": "Muslim families of fallen U.S. soldiers driven to oppose Trump. NEW YORK (Reuters) - Nazar Naqvi has faithfully voted Re",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.5239
+    },
+    {
+      "text": "Georgia governor to veto religious protection seen as anti-gay. ATLANTA (Reuters) - Georgia Governor Nathan Deal said on",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.5228
+    },
+    {
+      "text": "Dubai frees Briton sentenced for touching another man: advocacy group. DUBAI (Reuters) - Dubai s ruler has pardoned a Br",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.5193
+    },
+    {
+      "text": "if you dress like an attention whore at work expect to be treated like one. what would you do if you saw two boys of  ye",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.5201
+    },
+    {
+      "text": "Trump's go-to man Bannon takes hardline view on immigration. WASHINGTON (Reuters) - When Donald Trump’s administration p",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.5179
+    },
+    {
+      "text": "Myanmar army opens probe amid reports of killings, abuse of Rohingya Muslims. YANGON (Reuters) - Myanmar s military has ",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.5235
+    },
+    {
+      "text": "Despite showman reputation, Trump inauguration shaping up as low-key. WASHINGTON (Reuters) - Donald Trump made his name ",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.52
+    },
+    {
+      "text": "EU wants Brexit money this month, Davis seeks 'political' fix. BRUSSELS (Reuters) - The European Union told Britain on F",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.5214
+    },
+    {
+      "text": "British spy chief says Islamist militants can execute deadly attack plans in just days. LONDON (Reuters) - Britain faces",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.5215
+    },
+    {
+      "text": "Republican senator to block arms sales over Qatar crisis. WASHINGTON (Reuters) - The chairman of the U.S. Senate Foreign",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.5195
+    },
+    {
+      "text": "Russian aerobatics team joins Serbian display of air power. BELGRADE (Reuters) - Russia s elite aerobatic team zoomed ov",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.5248
+    },
+    {
+      "text": "'Open Sesame:' Lobbyists cheer warmer welcome in Trump White House. WASHINGTON (Reuters) - During the eight years of the",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.5191
+    },
+    {
+      "text": "UK PM May heads to Brussels expecting 'constructive' meeting: spokesman. LONDON (Reuters) - British Prime Minister There",
+      "actual": "FAKE",
+      "predicted": "REAL",
+      "confidence": 0.5201
+    }
+  ]
+}

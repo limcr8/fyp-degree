@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Fake News Detection",
+  "version": "1.0.0",
+  "description": "Verify the credibility of news snippets directly from your browser using AI-powered analysis.",
+  "permissions": ["contextMenus", "storage", "scripting", "activeTab"],
+  "host_permissions": ["http://localhost:8000/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Fake News Detector"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html"
+}

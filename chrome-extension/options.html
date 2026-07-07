@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Fake News Detector — Settings</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <div class="card">
+    <h1>⚙️ Settings</h1>
+    <p class="sub">Choose how the extension authenticates with the Fake News Detection API.</p>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="apikey">API Key</button>
+      <button class="tab" data-tab="login">Login</button>
+    </div>
+
+    <div id="status" class="status hidden"></div>
+
+    <div id="apikeyPanel" class="panel">
+      <label>Your API Key</label>
+      <input type="text" id="apiKeyInput" placeholder="sk_live_..." />
+      <p class="hint">Find your key on the <a id="websiteLink" href="#">Profile page of the website</a>.</p>
+      <button id="saveKeyBtn">Save Key</button>
+    </div>
+
+    <div id="loginPanel" class="panel hidden">
+      <label>Email</label>
+      <input type="email" id="emailInput" placeholder="you@example.com" />
+      <label>Password</label>
+      <input type="password" id="passwordInput" placeholder="••••••••" />
+      <button id="loginBtn">Log In</button>
+    </div>
+
+    <div class="current">
+      <span>Active method: </span><strong id="currentMethod">None</strong>
+      <button id="logoutBtn" class="link hidden">Log out</button>
+    </div>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

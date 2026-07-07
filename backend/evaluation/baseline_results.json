@@ -1,0 +1,32 @@
+{
+  "baselines": [
+    {
+      "model": "Naive Bayes",
+      "accuracy": 0.88,
+      "precision_macro": 0.8808,
+      "recall_macro": 0.882,
+      "f1_macro": 0.88,
+      "train_time_s": 0.0,
+      "inference_ms": 0.01
+    },
+    {
+      "model": "Logistic Regression",
+      "accuracy": 0.91,
+      "precision_macro": 0.9102,
+      "recall_macro": 0.9091,
+      "f1_macro": 0.9096,
+      "train_time_s": 0.01,
+      "inference_ms": 0.0
+    }
+  ],
+  "cross_validation": {
+    "Naive Bayes": {
+      "mean_f1": 0.8775,
+      "std_f1": 0.0524
+    },
+    "Logistic Regression": {
+      "mean_f1": 0.8999,
+      "std_f1": 0.0415
+    }
+  }
+}

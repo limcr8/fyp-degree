@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Fake News Detection</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="badge-logo">FD</span>
+      <span>Fake News Detection</span>
+    </div>
+    <button id="settingsBtn" title="Settings">⚙️</button>
+  </header>
+
+  <div id="authWarn" class="warn hidden">
+    No credential configured. <a id="openSettings" href="#">Open Settings</a>.
+  </div>
+
+  <div class="input-wrap">
+    <textarea id="textInput" placeholder="Highlight text on any page, or paste a headline here…"></textarea>
+    <button id="verifyBtn">Verify</button>
+  </div>
+
+  <div id="status" class="status hidden"></div>
+
+  <div id="result" class="result hidden">
+    <div id="verdictBadge" class="badge">—</div>
+    <div class="confidence">
+      <span>Confidence</span>
+      <strong id="confidenceVal">0%</strong>
+    </div>
+    <p id="summary" class="summary"></p>
+    <div id="factor" class="factor hidden"></div>
+  </div>
+
+  <div class="footer-link">
+    <a id="webPortalLink" href="#">Visit Full Service Web Portal ➜</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

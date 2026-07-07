@@ -56,6 +56,18 @@ app.include_router(trusted_sources_router)
 app.include_router(datasets_router)
 
 
+@app.get("/")
+def read_root() -> dict[str, str]:
+    """
+    Root endpoint returning a welcome message and navigation links.
+    """
+    return {
+        "message": "Welcome to the Explainable AI Fake News Detection API!",
+        "health": "/health",
+        "docs": "/docs"
+    }
+
+
 @app.get("/health")
 def health_check() -> dict[str, str]:
     """
